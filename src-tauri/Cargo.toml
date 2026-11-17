@@ -21,3 +21,16 @@ tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 tokio = { version = "1", features = ["time"] }
+
+# cargo-release, run from this directory: `cargo release patch --execute`
+# bumps the version here and in package.json and package-lock.json, commits,
+# and tags locally. tauri.conf.json has no version of its own; Tauri reads
+# this file's. Pushing is left to you: `git push origin main --follow-tags`.
+[package.metadata.release]
+push = false
+publish = false
+tag-name = "v{{version}}"
+pre-release-replacements = [
+    { file = "../package.json", search = '"version": "[^"]*"', replace = '"version": "{{version}}"', exactly = 1 },
+    { file = "../package-lock.json", search = '("name": "agent-usage-window",\s+"version": )"[^"]*"', replace = '$1"{{version}}"', exactly = 2 },
+]
