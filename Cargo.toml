@@ -21,3 +21,10 @@ dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = "2"
+
+# cargo-release: `cargo release patch --execute` bumps the version, commits,
+# and tags locally. Pushing is left to you: `git push origin main --follow-tags`.
+[package.metadata.release]
+push = false
+publish = false
+tag-name = "v{{version}}"
