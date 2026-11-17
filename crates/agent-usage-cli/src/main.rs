@@ -48,6 +48,10 @@ struct CodexArgs {
     /// Path to a Codex auth.json. Overrides CODEX_ACCESS_TOKEN and CODEX_HOME
     #[arg(long, value_name = "PATH")]
     auth_file: Option<PathBuf>,
+
+    /// Print the HTTP status and raw quota headers as JSON and exit
+    #[arg(long)]
+    raw: bool,
 }
 
 #[derive(Args)]
@@ -97,6 +101,18 @@ fn main() -> ExitCode {
                 options.codex.effort = effort;
             }
             options.codex.auth_file = args.auth_file;
+            if args.raw {
+                return match agent_usage_cli::codex::fetch_raw(&options.codex) {
+                    Ok(body) => {
+                        println!("{body}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(err) => {
+                        eprintln!("{err}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
             (
                 vec![agent_usage_cli::fetch(Provider::Codex, &options)],
                 true,
@@ -300,5 +316,30 @@ mod tests {
     #[test]
     fn invalid_effort_is_rejected() {
         assert!(Cli::try_parse_from(["agent-usage-cli", "codex", "--effort", "extreme"]).is_err());
+    }
+
+    #[test]
+    fn codex_raw_accepts_query_options_and_json() {
+        let cli = Cli::try_parse_from([
+            "agent-usage-cli",
+            "codex",
+            "--raw",
+            "--json",
+            "--model",
+            "example-model",
+            "--effort",
+            "low",
+            "--auth-file",
+            "example-auth.json",
+        ])
+        .unwrap();
+        assert!(cli.json);
+        let Command::Codex(args) = cli.command else {
+            panic!("expected codex")
+        };
+        assert!(args.raw);
+        assert_eq!(args.model.as_deref(), Some("example-model"));
+        assert_eq!(args.effort.as_deref(), Some("low"));
+        assert_eq!(args.auth_file, Some(PathBuf::from("example-auth.json")));
     }
 }

@@ -46,7 +46,7 @@ cargo install --path crates/agent-usage-cli --locked
 ## Usage
 
 ```
-agent-usage-cli codex  [--model M] [--effort E] [--auth-file PATH]
+agent-usage-cli codex  [--model M] [--effort E] [--auth-file PATH] [--raw]
 agent-usage-cli claude [--credentials-file PATH] [--raw]
 agent-usage-cli all    [--only codex,claude] [--codex-model M] [--codex-effort E]
                    [--codex-auth-file PATH] [--claude-credentials-file PATH]
@@ -62,6 +62,11 @@ non-zero if any provider could not be queried.
   have the default.
 - `claude --raw` prints the usage endpoint's unparsed response, which helps
   when its format changes.
+- `codex --raw` prints JSON containing the HTTP `status` and unparsed
+  `x-codex-*` response `headers`. Codex reports usage in these headers; the
+  generated inference text is discarded. HTTP 429 quota responses are
+  included. Other HTTP failures print an error and return a non-zero exit
+  code. Like Claude's raw mode, this takes precedence over `--json`.
 
 There is no config file and no built-in polling. To watch usage, wrap the
 command in a poller, for example `watch -n 300 agent-usage-cli all`.

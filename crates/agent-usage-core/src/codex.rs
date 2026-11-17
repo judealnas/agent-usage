@@ -207,8 +207,14 @@ fn build_report(
     report
 }
 
-/// Query Codex usage. Makes one real, minimal inference request.
-pub fn fetch(config: &CodexOptions) -> Result<UsageReport, Error> {
+struct QuotaResponse {
+    status: u16,
+    headers: HashMap<String, String>,
+    error_body: Option<String>,
+}
+
+/// Make one real, minimal inference request for either output mode.
+fn request(config: &CodexOptions) -> Result<QuotaResponse, Error> {
     let credentials = load_credentials(config.auth_file.as_deref())?;
 
     // List-based input is required by the Codex endpoint.
@@ -247,6 +253,10 @@ pub fn fetch(config: &CodexOptions) -> Result<UsageReport, Error> {
         Err(err) => return Err(Error::Http(format!("Codex request failed: {err}"))),
     };
 
+    Ok(read_response(response))
+}
+
+fn read_response(response: ureq::Response) -> QuotaResponse {
     let status = response.status();
     let headers: HashMap<String, String> = response
         .headers_names()
@@ -271,12 +281,45 @@ pub fn fetch(config: &CodexOptions) -> Result<UsageReport, Error> {
         let _ = std::io::copy(&mut reader, &mut std::io::sink());
     }
 
-    Ok(build_report(
+    QuotaResponse {
         status,
-        &headers,
-        error_body.as_deref(),
+        headers,
+        error_body,
+    }
+}
+
+/// Query Codex usage. Makes one real, minimal inference request.
+pub fn fetch(config: &CodexOptions) -> Result<UsageReport, Error> {
+    let response = request(config)?;
+    Ok(build_report(
+        response.status,
+        &response.headers,
+        response.error_body.as_deref(),
         config,
     ))
+}
+
+/// Fetch unparsed quota headers and HTTP status as JSON.
+/// Like `fetch`, this makes one real inference request. The generated text
+/// is discarded; usage is carried by the `x-codex-*` response headers.
+pub fn fetch_raw(config: &CodexOptions) -> Result<String, Error> {
+    raw_response(request(config)?, config)
+}
+
+fn raw_response(response: QuotaResponse, config: &CodexOptions) -> Result<String, Error> {
+    // Preserve 429 quota data and unknown/malformed headers for inspection.
+    if response.status != 200 && response.status != 429 {
+        let report = build_report(
+            response.status,
+            &response.headers,
+            response.error_body.as_deref(),
+            config,
+        );
+        return Err(Error::Http(
+            report.error.expect("non-usage status is an error"),
+        ));
+    }
+    Ok(json!({ "status": response.status, "headers": response.headers }).to_string())
 }
 
 #[cfg(test)]
@@ -303,6 +346,49 @@ mod tests {
             ("x-codex-active-limit", "premium"),
             ("x-codex-plan-type", "edu_plus"),
         ])
+    }
+
+    #[test]
+    fn raw_preserves_unknown_and_malformed_quota_headers() {
+        for status in [200, 429] {
+            let http = format!(
+                "HTTP/1.1 {status} Response\r\n\
+                 X-Codex-Primary-Used-Percent: unparseable\r\n\
+                 X-Codex-New-Field: original-value\r\n\
+                 Set-Cookie: private-cookie\r\n\r\ninference body"
+            );
+            let response = read_response(http.parse().unwrap());
+            let raw = raw_response(response, &CodexOptions::default()).unwrap();
+            let value: Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(value["status"], status);
+            assert_eq!(
+                value["headers"]["x-codex-primary-used-percent"],
+                "unparseable"
+            );
+            assert_eq!(value["headers"]["x-codex-new-field"], "original-value");
+            assert_eq!(value["headers"].as_object().unwrap().len(), 2);
+            assert!(!raw.contains("private-cookie"));
+            assert!(!raw.contains("inference body"));
+        }
+    }
+
+    #[test]
+    fn raw_allows_inspection_when_quota_headers_are_missing() {
+        let response = read_response(ureq::Response::new(200, "OK", "").unwrap());
+        let raw = raw_response(response, &CodexOptions::default()).unwrap();
+        let value: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value, json!({"status": 200, "headers": {}}));
+    }
+
+    #[test]
+    fn raw_reports_http_errors_instead_of_printing_success() {
+        for (status, message) in [(401, "refresh the login"), (500, "server failure")] {
+            let response = read_response(
+                ureq::Response::new(status, "Error", r#"{"detail":"server failure"}"#).unwrap(),
+            );
+            let error = raw_response(response, &CodexOptions::default()).unwrap_err();
+            assert!(error.to_string().contains(message));
+        }
     }
 
     #[test]
