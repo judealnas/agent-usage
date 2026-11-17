@@ -4,8 +4,8 @@ A small always-on-top window that shows how much of your coding-agent
 subscription limits you have used. Supports Codex (ChatGPT subscription)
 and Claude Code (Claude subscription). Windows only for now.
 
-It is a thin window over the `agent-usage` library from [`agent-usage-cli`](https://github.com/judealnas/agent-usage-cli), which is
-fetched directly from GitHub by Cargo and also works on its own as a command-line tool.
+It uses the local `agent-usage-core` Rust library shared with the CLI.
+The CLI executable is not required.
 
 ## Read this first
 
@@ -37,13 +37,13 @@ Prerequisites:
 
 ```
 git clone <this repository>
-cd agent-usage-window
-npm install
+cd agent-usage/apps/agent-usage-window
+npm ci
 npm run tauri dev      # run from source
-npm run tauri build    # build an installer under src-tauri/target/release/bundle
+npm run tauri build    # build an installer under the workspace root target/release/bundle
 ```
 
-Cargo downloads the pinned version of `agent-usage` automatically on the first build.
+Build from the complete monorepo checkout. See the [workspace README](../../README.md) for shared releases.
 
 ## Using the window
 
@@ -55,14 +55,14 @@ Cargo downloads the pinned version of `agent-usage` automatically on the first b
 | Refresh | Refreshes every card now |
 | + | Adds back a provider you have hidden |
 | Sliders | Opens settings |
-| – | Minimizes to the taskbar |
-| × | Closes the app |
+| â€“ | Minimizes to the taskbar |
+| Ã— | Closes the app |
 
 **Each card** shows one provider: a bar for each rate-limit window, the
 percent used, and a countdown to the reset.
 
 - Drag a card by its header to reorder the cards.
-- The × in the header hides the card. A hidden provider is not queried.
+- The Ã— in the header hides the card. A hidden provider is not queried.
 - The refresh button fetches that provider now.
 - **Auto Refresh** turns timed refreshing on or off. When it is on, set the
   interval beside it (a whole number, 1 second or more). Under a minute, the card warns you: fast Codex refreshes spend quota, and fast Claude refreshes can get rate-limited.

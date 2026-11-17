@@ -1,30 +1,13 @@
 [package]
 name = "agent-usage-cli"
-version = "0.1.1"
+version.workspace = true
 edition = "2021"
-description = "Query subscription usage for coding agents (Codex, Claude Code) from the command line"
 license = "MIT"
 readme = "README.md"
-
-[lib]
-name = "agent_usage_cli"
-path = "src/lib.rs"
-
-[[bin]]
-name = "agent-usage-cli"
-path = "src/main.rs"
+description = "Query subscription usage for coding agents from the command line"
 
 [dependencies]
+agent-usage-core = { path = "../agent-usage-core" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
-dirs = "6"
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ureq = "2"
-
-# cargo-release: `cargo release patch --execute` bumps the version, commits,
-# and tags locally. Pushing is left to you: `git push origin main --follow-tags`.
-[package.metadata.release]
-push = false
-publish = false
-tag-name = "v{{version}}"

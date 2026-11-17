@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use agent_usage::options::CODEX_EFFORTS;
-use agent_usage::{Provider, UsageReport};
+use agent_usage_core::options::CODEX_EFFORTS;
+use agent_usage_core::{Provider, UsageReport};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -61,7 +61,7 @@ async fn fetch_now(app: AppHandle, provider: Provider) {
     let options = state.snapshot().options();
     // The library uses blocking HTTP, so keep it off the async runtime.
     let report =
-        tauri::async_runtime::spawn_blocking(move || agent_usage::fetch(provider, &options))
+        tauri::async_runtime::spawn_blocking(move || agent_usage_core::fetch(provider, &options))
             .await
             .unwrap_or_else(|_| UsageReport::failed(provider, "The query crashed unexpectedly."));
 

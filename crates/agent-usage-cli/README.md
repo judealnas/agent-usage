@@ -40,7 +40,7 @@ Claude Code (max)
 You need the [Rust toolchain](https://rustup.rs).
 
 ```
-cargo install --path .
+cargo install --path crates/agent-usage-cli --locked
 ```
 
 ## Usage
@@ -114,23 +114,7 @@ The crate also builds a library, `agent_usage_cli`, with the same queries:
 
 ## Development and releases
 
-Every push to `main` and every pull request runs formatting, lint, tests,
-and a release build on Windows and Linux through GitHub Actions
-(`.github/workflows/ci.yml`). You can also start CI manually from the
-Actions tab.
-
-To publish a release, set `version` in `Cargo.toml`, commit, then tag that
-commit `vX.Y.Z` and push the tag. The release workflow checks that the tag
-matches the version, checks formatting and lints, runs the tests, builds
-`agent-usage-cli.exe` for Windows x86-64, and attaches it to a new GitHub Release.
-Each release also includes `.zip` and `.tar.gz` source archives of the tagged
-commit, including `Cargo.lock`, for building from source. The executable and
-both archives have SHA-256 checksums. Releases in this private repository
-are accessible to people with repository access.
-
-If you have `cargo-release` installed, `cargo release patch --execute`
-bumps the version, commits, and tags locally without publishing to crates.io.
-Then run `git push origin main --follow-tags` to trigger the release workflow.
+See the [workspace README](../../README.md) for shared versioning and releases.
 
 ## License
 

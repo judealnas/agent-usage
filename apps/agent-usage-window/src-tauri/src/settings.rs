@@ -3,8 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use agent_usage::options::CODEX_EFFORTS;
-use agent_usage::{ClaudeOptions, CodexOptions, Options, Provider};
+use agent_usage_core::options::CODEX_EFFORTS;
+use agent_usage_core::{ClaudeOptions, CodexOptions, Options, Provider};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_INTERVAL_SECONDS: u64 = 300;

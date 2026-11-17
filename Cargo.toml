@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/agent-usage-core", "crates/agent-usage-cli", "apps/agent-usage-window/src-tauri"]
+default-members = ["crates/agent-usage-core", "crates/agent-usage-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
