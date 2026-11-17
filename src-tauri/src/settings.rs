@@ -18,8 +18,9 @@ pub struct Settings {
     pub codex: CodexOptions,
     pub claude: ClaudeOptions,
     pub thresholds: Thresholds,
-    /// Warn when Codex is set to poll faster than once a minute.
-    pub warn_fast_codex_polling: bool,
+    /// Warn when a provider is set to poll faster than once a minute.
+    #[serde(alias = "warn_fast_codex_polling")]
+    pub warn_fast_polling: bool,
     /// Keep the window above other windows.
     pub pinned: bool,
 }
@@ -49,7 +50,7 @@ pub struct Preferences {
     pub codex: CodexOptions,
     pub claude: ClaudeOptions,
     pub thresholds: Thresholds,
-    pub warn_fast_codex_polling: bool,
+    pub warn_fast_polling: bool,
 }
 
 fn yes() -> bool {
@@ -103,7 +104,7 @@ impl Default for Settings {
             codex: CodexOptions::default(),
             claude: ClaudeOptions::default(),
             thresholds: Thresholds::default(),
-            warn_fast_codex_polling: true,
+            warn_fast_polling: true,
             pinned: true,
         }
     }
@@ -262,7 +263,7 @@ impl Settings {
         self.codex.model = self.codex.model.trim().to_string();
         self.claude = preferences.claude;
         self.thresholds = preferences.thresholds;
-        self.warn_fast_codex_polling = preferences.warn_fast_codex_polling;
+        self.warn_fast_polling = preferences.warn_fast_polling;
         Ok(())
     }
 }
@@ -284,7 +285,7 @@ mod tests {
             .iter()
             .all(|p| p.shown && p.auto_refresh && p.interval_seconds == 300));
         assert!(settings.pinned);
-        assert!(settings.warn_fast_codex_polling);
+        assert!(settings.warn_fast_polling);
     }
 
     #[test]
@@ -363,7 +364,7 @@ mod tests {
             },
             claude: ClaudeOptions::default(),
             thresholds: Thresholds { warn, critical },
-            warn_fast_codex_polling: false,
+            warn_fast_polling: false,
         };
         assert!(settings
             .apply_preferences(preferences(90.0, 70.0, "low"))
@@ -381,6 +382,6 @@ mod tests {
             .unwrap();
         assert_eq!(settings.thresholds.warn, 50.0);
         assert_eq!(settings.codex.effort, "high");
-        assert!(!settings.warn_fast_codex_polling);
+        assert!(!settings.warn_fast_polling);
     }
 }

@@ -66,7 +66,7 @@ percent used, and a countdown to the reset.
 - The × in the header hides the card. A hidden provider is not queried.
 - The refresh button fetches that provider now.
 - **Auto Refresh** turns timed refreshing on or off. When it is on, set the
-  interval beside it (1 second or more).
+  interval beside it (a whole number, 1 second or more). Under a minute, the card warns you: fast Codex refreshes spend quota, and fast Claude refreshes can get rate-limited.
 - If a refresh fails, the card keeps its last values, dims, and shows
   "stale"; hover over that word for the reason.
 
@@ -75,7 +75,7 @@ the content, and cards sit side by side when the window is wide enough.
 
 **Settings** holds the Codex model and effort used for the probe request,
 optional paths to the two credential files, the percentages at which bars
-turn amber and red, and a switch for the fast-Codex-refresh warning.
+turn amber and red, and a switch for the fast-refresh warning.
 
 Settings are saved to `%APPDATA%\agent-usage-window\settings.json`. The app
 rewrites that file whenever something changes, so it is not meant for hand

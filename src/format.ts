@@ -51,9 +51,7 @@ export function splitInterval(seconds: number): { value: number; unit: IntervalU
   return { value: seconds, unit: "seconds" };
 }
 
-/** Whole seconds for a value and unit, or null if it is under 1 second. */
+/** Seconds for a value and unit, or null unless the value is a whole number of at least 1. */
 export function joinInterval(value: number, unit: IntervalUnit): number | null {
-  const seconds = value * UNIT_SECONDS[unit];
-  // Check before rounding, so that 0.5 seconds is rejected, not rounded up.
-  return Number.isFinite(seconds) && seconds >= 1 ? Math.round(seconds) : null;
+  return Number.isInteger(value) && value >= 1 ? value * UNIT_SECONDS[unit] : null;
 }

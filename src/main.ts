@@ -59,7 +59,7 @@ interface Settings {
   codex: { model: string; effort: string; auth_file: string | null };
   claude: { credentials_file: string | null };
   thresholds: { warn: number; critical: number };
-  warn_fast_codex_polling: boolean;
+  warn_fast_polling: boolean;
   pinned: boolean;
 }
 
@@ -181,6 +181,11 @@ function updateTitlebar(): void {
 
 // ---- Cards ----
 
+/** Shown on a card whose provider is set to refresh faster than once a minute. */
+const FAST_REFRESH_NOTICES: Record<ProviderId, string> = {
+  codex: "Every Codex refresh is a real request that uses a little of your quota.",
+  claude: "Refreshing Claude this often can get usage requests rate-limited for a while.",
+};
 function buildCard(provider: ProviderSettings): HTMLElement {
   const id = provider.id;
   const card = el("section", "card");
@@ -213,10 +218,14 @@ function buildCard(provider: ProviderSettings): HTMLElement {
   const split = splitInterval(provider.interval_seconds);
   const valueInput = el("input");
   valueInput.type = "number";
-  valueInput.min = "0";
-  valueInput.step = "any";
+  valueInput.min = "1";
+  valueInput.step = "1";
+  // Whole numbers only: block the keys that make decimals, signs, and exponents.
+  valueInput.addEventListener("keydown", (event) => {
+    if ([".", ",", "-", "+", "e", "E"].includes(event.key)) event.preventDefault();
+  });
   valueInput.value = String(split.value);
-  valueInput.title = "Refresh interval (at least 1 second)";
+  valueInput.title = "Refresh interval (a whole number, 1 or more)";
   const unitSelect = el("select");
   for (const unit of Object.keys(UNIT_SECONDS)) {
     const option = el("option", undefined, unit);
@@ -250,10 +259,10 @@ function buildCard(provider: ProviderSettings): HTMLElement {
     const seconds = joinInterval(Number(valueInput.value), unitSelect.value as IntervalUnit);
     valueInput.classList.toggle("invalid", seconds === null);
     if (seconds === null) {
-      valueInput.title = "The interval must be at least 1 second";
+      valueInput.title = "Enter a whole number, 1 or more";
       return;
     }
-    valueInput.title = "Refresh interval (at least 1 second)";
+    valueInput.title = "Refresh interval (a whole number, 1 or more)";
     void apply(true, seconds);
   };
   // `change` fires on Enter and on blur.
@@ -361,15 +370,11 @@ function updateCard(id: ProviderId): void {
   }
 
   const notice = card.querySelector<HTMLElement>(".notice")!;
-  const fastCodex =
-    id === "codex" &&
-    settings.warn_fast_codex_polling &&
-    provider.auto_refresh &&
-    provider.interval_seconds < 60;
-  notice.hidden = !fastCodex;
-  notice.textContent = fastCodex
-    ? "Every Codex refresh is a real request that uses a little of your quota."
-    : "";
+  const fast =
+    settings.warn_fast_polling && provider.auto_refresh && provider.interval_seconds < 60;
+  const text = fast ? FAST_REFRESH_NOTICES[id] : undefined;
+  notice.hidden = text === undefined;
+  notice.textContent = text ?? "";
 }
 
 function renderCards(): void {
@@ -491,8 +496,8 @@ function renderSettings(): void {
   const fastLabel = el("label", "switch");
   const fast = el("input");
   fast.type = "checkbox";
-  fast.checked = settings.warn_fast_codex_polling;
-  fastLabel.append(fast, el("span", undefined, "Warn when Codex refreshes faster than once a minute"));
+  fast.checked = settings.warn_fast_polling;
+  fastLabel.append(fast, el("span", undefined, "Warn when a provider refreshes faster than once a minute"));
 
   const errorEl = el("div", "form-error");
   errorEl.hidden = true;
@@ -518,7 +523,7 @@ function renderSettings(): void {
       },
       claude: { credentials_file: credentialsFile.input.value.trim() || null },
       thresholds: { warn: Number(warn.input.value), critical: Number(critical.input.value) },
-      warn_fast_codex_polling: fast.checked,
+      warn_fast_polling: fast.checked,
     };
     try {
       settings = await invoke<Settings>("save_preferences", { preferences });
