@@ -1,0 +1,24 @@
+[package]
+name = "agent-usage"
+version = "0.1.0"
+edition = "2021"
+description = "Query subscription usage for coding agents (Codex, Claude Code) from the command line"
+license = "MIT"
+readme = "README.md"
+
+[lib]
+name = "agent_usage"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent-usage"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+ureq = "2"
