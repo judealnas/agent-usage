@@ -55,9 +55,14 @@ jobs:
         run: |
           mkdir dist
           asset="agent-usage-$GITHUB_REF_NAME-x86_64-windows.exe"
+          source="agent-usage-$GITHUB_REF_NAME-source"
           cp target/release/agent-usage.exe "dist/$asset"
+          git archive --format=zip --prefix="agent-usage-$GITHUB_REF_NAME/" --output="dist/$source.zip" HEAD
+          git archive --format=tar.gz --prefix="agent-usage-$GITHUB_REF_NAME/" --output="dist/$source.tar.gz" HEAD
           cd dist
-          sha256sum "$asset" > "$asset.sha256"
+          for file in "$asset" "$source.zip" "$source.tar.gz"; do
+            sha256sum "$file" > "$file.sha256"
+          done
 
       - name: Publish the release
         env:

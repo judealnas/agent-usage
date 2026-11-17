@@ -120,9 +120,11 @@ Actions tab.
 To publish a release, set `version` in `Cargo.toml`, commit, then tag that
 commit `vX.Y.Z` and push the tag. The release workflow checks that the tag
 matches the version, checks formatting and lints, runs the tests, builds
-`agent-usage.exe` for Windows x86-64, and attaches it to a new GitHub Release
-with a SHA-256 checksum. Releases in this private repository are accessible
-to people with repository access.
+`agent-usage.exe` for Windows x86-64, and attaches it to a new GitHub Release.
+Each release also includes `.zip` and `.tar.gz` source archives of the tagged
+commit, including `Cargo.lock`, for building from source. The executable and
+both archives have SHA-256 checksums. Releases in this private repository
+are accessible to people with repository access.
 
 If you have `cargo-release` installed, `cargo release patch --execute`
 bumps the version, commits, and tags locally without publishing to crates.io.
