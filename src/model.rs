@@ -133,18 +133,28 @@ pub enum Error {
     Http(String),
     /// The response did not contain usable usage data.
     Parse(String),
-    /// The config file is invalid.
-    Config(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Credentials(m) | Error::Http(m) | Error::Parse(m) | Error::Config(m) => {
-                f.write_str(m)
-            }
+            Error::Credentials(m) | Error::Http(m) | Error::Parse(m) => f.write_str(m),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+impl std::str::FromStr for Provider {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Provider, String> {
+        Provider::ALL
+            .into_iter()
+            .find(|provider| provider.id() == text.trim().to_lowercase())
+            .ok_or_else(|| {
+                let known: Vec<_> = Provider::ALL.iter().map(|p| p.id()).collect();
+                format!("unknown provider \"{text}\" (known: {})", known.join(", "))
+            })
+    }
+}

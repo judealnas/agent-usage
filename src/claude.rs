@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::config::ClaudeConfig;
 use crate::model::{Error, Metric, Provider, UsageReport, FIVE_HOUR_MINUTES, WEEKLY_MINUTES};
+use crate::options::ClaudeOptions;
 
 const ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
@@ -254,13 +254,13 @@ fn parse_extra_usage(value: &Value) -> Option<Metric> {
 }
 
 /// Fetch the raw response body, for inspecting schema changes.
-pub fn fetch_raw(config: &ClaudeConfig) -> Result<String, Error> {
+pub fn fetch_raw(config: &ClaudeOptions) -> Result<String, Error> {
     let credentials = load_credentials(config.credentials_file.as_deref())?;
     request(&credentials)
 }
 
 /// Query Claude Code usage. Costs no quota.
-pub fn fetch(config: &ClaudeConfig) -> Result<UsageReport, Error> {
+pub fn fetch(config: &ClaudeOptions) -> Result<UsageReport, Error> {
     let credentials = load_credentials(config.credentials_file.as_deref())?;
     let text = request(&credentials)?;
     let body: Value = serde_json::from_str(&text).map_err(|err| {

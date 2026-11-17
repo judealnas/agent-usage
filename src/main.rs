@@ -4,8 +4,8 @@ use std::process::ExitCode;
 use chrono::{Local, TimeZone};
 use clap::{Args, Parser, Subcommand};
 
-use agent_usage::config::CODEX_EFFORTS;
-use agent_usage::{Config, Metric, Provider, UsageReport};
+use agent_usage::options::CODEX_EFFORTS;
+use agent_usage::{Metric, Options, Provider, UsageReport};
 
 #[derive(Parser)]
 #[command(
@@ -21,10 +21,6 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// Config file to use instead of the default location
-    #[arg(long, global = true, value_name = "PATH")]
-    config: Option<PathBuf>,
-
     #[command(subcommand)]
     command: Command,
 }
@@ -35,17 +31,17 @@ enum Command {
     Codex(CodexArgs),
     /// Claude Code (Claude subscription) usage
     Claude(ClaudeArgs),
-    /// Usage for every provider enabled in the config
-    All,
+    /// Usage for every provider
+    All(AllArgs),
 }
 
 #[derive(Args)]
 struct CodexArgs {
-    /// Model to probe [default: gpt-6-luna, or codex.model from the config]
+    /// Model to probe [default: gpt-6-luna]
     #[arg(long)]
     model: Option<String>,
 
-    /// Reasoning effort for the probe [default: low, or codex.effort from the config]
+    /// Reasoning effort for the probe [default: low]
     #[arg(long, value_parser = CODEX_EFFORTS)]
     effort: Option<String>,
 
@@ -65,36 +61,48 @@ struct ClaudeArgs {
     raw: bool,
 }
 
+#[derive(Args)]
+struct AllArgs {
+    /// Providers to query, in order, comma-separated [default: every provider]
+    #[arg(long, value_name = "PROVIDERS", value_delimiter = ',')]
+    only: Option<Vec<Provider>>,
+
+    /// Codex model to probe [default: gpt-6-luna]
+    #[arg(long, value_name = "MODEL")]
+    codex_model: Option<String>,
+
+    /// Codex reasoning effort for the probe [default: low]
+    #[arg(long, value_name = "EFFORT", value_parser = CODEX_EFFORTS)]
+    codex_effort: Option<String>,
+
+    /// Path to a Codex auth.json
+    #[arg(long, value_name = "PATH")]
+    codex_auth_file: Option<PathBuf>,
+
+    /// Path to Claude Code's .credentials.json
+    #[arg(long, value_name = "PATH")]
+    claude_credentials_file: Option<PathBuf>,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
-
-    let mut config = match Config::load(cli.config.as_deref()) {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::from(2);
-        }
-    };
+    let mut options = Options::default();
 
     let (reports, single) = match cli.command {
         Command::Codex(args) => {
             if let Some(model) = args.model {
-                config.codex.model = model;
+                options.codex.model = model;
             }
             if let Some(effort) = args.effort {
-                config.codex.effort = effort;
+                options.codex.effort = effort;
             }
-            if let Some(auth_file) = args.auth_file {
-                config.codex.auth_file = Some(auth_file);
-            }
-            (vec![agent_usage::fetch(Provider::Codex, &config)], true)
+            options.codex.auth_file = args.auth_file;
+            (vec![agent_usage::fetch(Provider::Codex, &options)], true)
         }
         Command::Claude(args) => {
-            if let Some(credentials_file) = args.credentials_file {
-                config.claude.credentials_file = Some(credentials_file);
-            }
+            options.claude.credentials_file = args.credentials_file;
             if args.raw {
-                return match agent_usage::claude::fetch_raw(&config.claude) {
+                return match agent_usage::claude::fetch_raw(&options.claude) {
                     Ok(body) => {
                         println!("{body}");
                         ExitCode::SUCCESS
@@ -105,9 +113,20 @@ fn main() -> ExitCode {
                     }
                 };
             }
-            (vec![agent_usage::fetch(Provider::Claude, &config)], true)
+            (vec![agent_usage::fetch(Provider::Claude, &options)], true)
         }
-        Command::All => (agent_usage::fetch_all(&config), false),
+        Command::All(args) => {
+            if let Some(model) = args.codex_model {
+                options.codex.model = model;
+            }
+            if let Some(effort) = args.codex_effort {
+                options.codex.effort = effort;
+            }
+            options.codex.auth_file = args.codex_auth_file;
+            options.claude.credentials_file = args.claude_credentials_file;
+            let providers = args.only.unwrap_or_else(|| Provider::ALL.to_vec());
+            (agent_usage::fetch_all(&providers, &options), false)
+        }
     };
 
     if cli.json {
@@ -238,5 +257,42 @@ fn format_local(timestamp: i64, now: i64) -> String {
         time.format("%-I:%M %p").to_string()
     } else {
         time.format("%a %b %-d, %-I:%M %p").to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn only(args: &[&str]) -> Result<Option<Vec<Provider>>, clap::Error> {
+        let cli = Cli::try_parse_from(args)?;
+        match cli.command {
+            Command::All(all) => Ok(all.only),
+            _ => panic!("expected the all subcommand"),
+        }
+    }
+
+    #[test]
+    fn only_keeps_the_given_order() {
+        assert_eq!(
+            only(&["agent-usage", "all", "--only", "claude,codex"]).unwrap(),
+            Some(vec![Provider::Claude, Provider::Codex])
+        );
+        assert_eq!(only(&["agent-usage", "all"]).unwrap(), None);
+    }
+
+    #[test]
+    fn only_rejects_unknown_providers() {
+        assert!(only(&["agent-usage", "all", "--only", "codex,nope"]).is_err());
+    }
+
+    #[test]
+    fn config_flag_no_longer_exists() {
+        assert!(Cli::try_parse_from(["agent-usage", "all", "--config", "x"]).is_err());
+    }
+
+    #[test]
+    fn invalid_effort_is_rejected() {
+        assert!(Cli::try_parse_from(["agent-usage", "codex", "--effort", "extreme"]).is_err());
     }
 }

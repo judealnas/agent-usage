@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::config::CodexConfig;
 use crate::model::{Error, Metric, Provider, UsageReport, FIVE_HOUR_MINUTES, WEEKLY_MINUTES};
+use crate::options::CodexOptions;
 
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/responses";
 const TOKEN_ENV: &str = "CODEX_ACCESS_TOKEN";
@@ -33,7 +33,7 @@ fn default_auth_path() -> Option<PathBuf> {
 }
 
 /// Find credentials, in order of precedence:
-///   1. `auth_file` (the `--auth-file` flag or `codex.auth_file` config)
+///   1. `auth_file` (the `--auth-file` flag or `CodexOptions::auth_file`)
 ///   2. `CODEX_ACCESS_TOKEN` (+ optional `CODEX_ACCOUNT_ID`)
 ///   3. `$CODEX_HOME/auth.json`
 ///   4. `~/.codex/auth.json`
@@ -140,7 +140,7 @@ fn build_report(
     status: u16,
     headers: &HashMap<String, String>,
     error_body: Option<&str>,
-    config: &CodexConfig,
+    config: &CodexOptions,
 ) -> UsageReport {
     let mut report = UsageReport::new(Provider::Codex);
     report.plan = headers.get("x-codex-plan-type").cloned();
@@ -188,7 +188,7 @@ fn build_report(
 }
 
 /// Query Codex usage. Makes one real, minimal inference request.
-pub fn fetch(config: &CodexConfig) -> Result<UsageReport, Error> {
+pub fn fetch(config: &CodexOptions) -> Result<UsageReport, Error> {
     let credentials = load_credentials(config.auth_file.as_deref())?;
 
     // List-based input is required by the Codex endpoint.
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn parses_both_windows() {
-        let report = build_report(200, &sample_headers(), None, &CodexConfig::default());
+        let report = build_report(200, &sample_headers(), None, &CodexOptions::default());
         assert!(report.is_ok());
         assert!(!report.limit_reached);
         assert_eq!(report.plan.as_deref(), Some("edu_plus"));
@@ -325,7 +325,7 @@ mod tests {
             "x-codex-rate-limit-reached-type".to_string(),
             "primary".to_string(),
         );
-        let report = build_report(429, &h, Some("{}"), &CodexConfig::default());
+        let report = build_report(429, &h, Some("{}"), &CodexOptions::default());
         assert!(report.is_ok());
         assert!(report.limit_reached);
         assert_eq!(report.details["rate_limit_reached_type"], "primary");
@@ -343,7 +343,7 @@ mod tests {
             ("x-codex-primary-used-percent", "12"),
             ("x-codex-primary-window-minutes", "60"),
         ]);
-        let report = build_report(200, &h, None, &CodexConfig::default());
+        let report = build_report(200, &h, None, &CodexOptions::default());
         match &report.metrics[0] {
             Metric::Window {
                 label, resets_at, ..
@@ -362,19 +362,19 @@ mod tests {
             ("x-codex-secondary-used-percent", "3"),
             ("x-codex-secondary-window-minutes", "10080"),
         ]);
-        let report = build_report(200, &h, None, &CodexConfig::default());
+        let report = build_report(200, &h, None, &CodexOptions::default());
         assert_eq!(report.metrics.len(), 1);
     }
 
     #[test]
     fn missing_headers_is_an_error() {
-        let report = build_report(200, &HashMap::new(), None, &CodexConfig::default());
+        let report = build_report(200, &HashMap::new(), None, &CodexOptions::default());
         assert!(report.error.unwrap().contains("no quota headers"));
     }
 
     #[test]
     fn unauthorized_points_at_the_codex_cli() {
-        let report = build_report(401, &HashMap::new(), Some("{}"), &CodexConfig::default());
+        let report = build_report(401, &HashMap::new(), Some("{}"), &CodexOptions::default());
         assert!(report.error.unwrap().contains("Run the Codex CLI"));
     }
 
@@ -384,7 +384,7 @@ mod tests {
             400,
             &HashMap::new(),
             Some(r#"{"detail":"Unsupported model"}"#),
-            &CodexConfig::default(),
+            &CodexOptions::default(),
         );
         let error = report.error.unwrap();
         assert!(error.contains("HTTP 400"));

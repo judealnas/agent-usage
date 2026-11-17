@@ -5,30 +5,29 @@
 
 pub mod claude;
 pub mod codex;
-pub mod config;
 pub mod model;
+pub mod options;
 
-pub use config::Config;
 pub use model::{Error, Metric, Provider, UsageReport};
+pub use options::{ClaudeOptions, CodexOptions, Options};
 
 /// Query one provider. Never fails: a failed query yields a report with
 /// `error` set.
-pub fn fetch(provider: Provider, config: &Config) -> UsageReport {
+pub fn fetch(provider: Provider, options: &Options) -> UsageReport {
     let result = match provider {
-        Provider::Codex => codex::fetch(&config.codex),
-        Provider::Claude => claude::fetch(&config.claude),
+        Provider::Codex => codex::fetch(&options.codex),
+        Provider::Claude => claude::fetch(&options.claude),
     };
     result.unwrap_or_else(|err| UsageReport::failed(provider, err))
 }
 
-/// Query every provider enabled in the config, concurrently, returning
-/// reports in the configured order.
-pub fn fetch_all(config: &Config) -> Vec<UsageReport> {
+/// Query the given providers concurrently, returning reports in the same
+/// order.
+pub fn fetch_all(providers: &[Provider], options: &Options) -> Vec<UsageReport> {
     std::thread::scope(|scope| {
-        let handles: Vec<_> = config
-            .providers
+        let handles: Vec<_> = providers
             .iter()
-            .map(|&provider| (provider, scope.spawn(move || fetch(provider, config))))
+            .map(|&provider| (provider, scope.spawn(move || fetch(provider, options))))
             .collect();
         handles
             .into_iter()
