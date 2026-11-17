@@ -112,13 +112,21 @@ The crate also builds a library, `agent_usage`, with the same queries:
 
 ## Development and releases
 
-Every push and pull request runs formatting, lint, and tests on GitHub
-Actions (`.github/workflows/ci.yml`).
+Every push to `main` and every pull request runs formatting, lint, tests,
+and a release build on Windows and Linux through GitHub Actions
+(`.github/workflows/ci.yml`). You can also start CI manually from the
+Actions tab.
 
 To publish a release, set `version` in `Cargo.toml`, commit, then tag that
 commit `vX.Y.Z` and push the tag. The release workflow checks that the tag
-matches the version, runs the tests, builds `agent-usage.exe`, and attaches
-it to a new GitHub Release with a SHA-256 checksum.
+matches the version, checks formatting and lints, runs the tests, builds
+`agent-usage.exe` for Windows x86-64, and attaches it to a new GitHub Release
+with a SHA-256 checksum. Releases in this private repository are accessible
+to people with repository access.
+
+If you have `cargo-release` installed, `cargo release patch --execute`
+bumps the version, commits, and tags locally without publishing to crates.io.
+Then run `git push origin main --follow-tags` to trigger the release workflow.
 
 ## License
 
