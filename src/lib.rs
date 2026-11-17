@@ -1,7 +1,7 @@
 //! Query subscription usage for coding agents.
 //!
 //! Each provider returns a [`UsageReport`] in one normalized shape, so a
-//! caller (the `agent-usage` CLI, or a GUI) can treat them alike.
+//! caller (the `agent-usage-cli` CLI, or a GUI) can treat them alike.
 
 pub mod claude;
 pub mod codex;

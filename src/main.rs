@@ -4,12 +4,12 @@ use std::process::ExitCode;
 use chrono::{Local, TimeZone};
 use clap::{Args, Parser, Subcommand};
 
-use agent_usage::options::CODEX_EFFORTS;
-use agent_usage::{Metric, Options, Provider, UsageReport};
+use agent_usage_cli::options::CODEX_EFFORTS;
+use agent_usage_cli::{Metric, Options, Provider, UsageReport};
 
 #[derive(Parser)]
 #[command(
-    name = "agent-usage",
+    name = "agent-usage-cli",
     version,
     about = "Show subscription usage for coding agents",
     after_help = "Both providers are queried through undocumented endpoints using your \
@@ -97,12 +97,15 @@ fn main() -> ExitCode {
                 options.codex.effort = effort;
             }
             options.codex.auth_file = args.auth_file;
-            (vec![agent_usage::fetch(Provider::Codex, &options)], true)
+            (
+                vec![agent_usage_cli::fetch(Provider::Codex, &options)],
+                true,
+            )
         }
         Command::Claude(args) => {
             options.claude.credentials_file = args.credentials_file;
             if args.raw {
-                return match agent_usage::claude::fetch_raw(&options.claude) {
+                return match agent_usage_cli::claude::fetch_raw(&options.claude) {
                     Ok(body) => {
                         println!("{body}");
                         ExitCode::SUCCESS
@@ -113,7 +116,10 @@ fn main() -> ExitCode {
                     }
                 };
             }
-            (vec![agent_usage::fetch(Provider::Claude, &options)], true)
+            (
+                vec![agent_usage_cli::fetch(Provider::Claude, &options)],
+                true,
+            )
         }
         Command::All(args) => {
             if let Some(model) = args.codex_model {
@@ -125,7 +131,7 @@ fn main() -> ExitCode {
             options.codex.auth_file = args.codex_auth_file;
             options.claude.credentials_file = args.claude_credentials_file;
             let providers = args.only.unwrap_or_else(|| Provider::ALL.to_vec());
-            (agent_usage::fetch_all(&providers, &options), false)
+            (agent_usage_cli::fetch_all(&providers, &options), false)
         }
     };
 
@@ -275,24 +281,24 @@ mod tests {
     #[test]
     fn only_keeps_the_given_order() {
         assert_eq!(
-            only(&["agent-usage", "all", "--only", "claude,codex"]).unwrap(),
+            only(&["agent-usage-cli", "all", "--only", "claude,codex"]).unwrap(),
             Some(vec![Provider::Claude, Provider::Codex])
         );
-        assert_eq!(only(&["agent-usage", "all"]).unwrap(), None);
+        assert_eq!(only(&["agent-usage-cli", "all"]).unwrap(), None);
     }
 
     #[test]
     fn only_rejects_unknown_providers() {
-        assert!(only(&["agent-usage", "all", "--only", "codex,nope"]).is_err());
+        assert!(only(&["agent-usage-cli", "all", "--only", "codex,nope"]).is_err());
     }
 
     #[test]
     fn config_flag_no_longer_exists() {
-        assert!(Cli::try_parse_from(["agent-usage", "all", "--config", "x"]).is_err());
+        assert!(Cli::try_parse_from(["agent-usage-cli", "all", "--config", "x"]).is_err());
     }
 
     #[test]
     fn invalid_effort_is_rejected() {
-        assert!(Cli::try_parse_from(["agent-usage", "codex", "--effort", "extreme"]).is_err());
+        assert!(Cli::try_parse_from(["agent-usage-cli", "codex", "--effort", "extreme"]).is_err());
     }
 }

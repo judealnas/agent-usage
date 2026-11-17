@@ -54,11 +54,11 @@ jobs:
       - name: Package
         run: |
           mkdir dist
-          asset="agent-usage-$GITHUB_REF_NAME-x86_64-windows.exe"
-          source="agent-usage-$GITHUB_REF_NAME-source"
-          cp target/release/agent-usage.exe "dist/$asset"
-          git archive --format=zip --prefix="agent-usage-$GITHUB_REF_NAME/" --output="dist/$source.zip" HEAD
-          git archive --format=tar.gz --prefix="agent-usage-$GITHUB_REF_NAME/" --output="dist/$source.tar.gz" HEAD
+          asset="agent-usage-cli-$GITHUB_REF_NAME-x86_64-windows.exe"
+          source="agent-usage-cli-$GITHUB_REF_NAME-source"
+          cp target/release/agent-usage-cli.exe "dist/$asset"
+          git archive --format=zip --prefix="agent-usage-cli-$GITHUB_REF_NAME/" --output="dist/$source.zip" HEAD
+          git archive --format=tar.gz --prefix="agent-usage-cli-$GITHUB_REF_NAME/" --output="dist/$source.tar.gz" HEAD
           cd dist
           for file in "$asset" "$source.zip" "$source.tar.gz"; do
             sha256sum "$file" > "$file.sha256"

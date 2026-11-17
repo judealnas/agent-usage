@@ -1,5 +1,5 @@
 [package]
-name = "agent-usage"
+name = "agent-usage-cli"
 version = "0.1.1"
 edition = "2021"
 description = "Query subscription usage for coding agents (Codex, Claude Code) from the command line"
@@ -7,11 +7,11 @@ license = "MIT"
 readme = "README.md"
 
 [lib]
-name = "agent_usage"
+name = "agent_usage_cli"
 path = "src/lib.rs"
 
 [[bin]]
-name = "agent-usage"
+name = "agent-usage-cli"
 path = "src/main.rs"
 
 [dependencies]

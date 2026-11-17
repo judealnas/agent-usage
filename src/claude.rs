@@ -98,7 +98,7 @@ fn request(credentials: &Credentials) -> Result<String, Error> {
         .set("Accept", "application/json")
         .set(
             "User-Agent",
-            concat!("agent-usage/", env!("CARGO_PKG_VERSION")),
+            concat!("agent-usage-cli/", env!("CARGO_PKG_VERSION")),
         )
         .call();
 
@@ -274,7 +274,7 @@ pub fn fetch(config: &ClaudeOptions) -> Result<UsageReport, Error> {
     if report.metrics.is_empty() {
         return Err(Error::Parse(
             "The Claude usage response contained no recognizable usage windows. The \
-             endpoint's format may have changed; run `agent-usage claude --raw` to inspect it."
+             endpoint's format may have changed; run `agent-usage-cli claude --raw` to inspect it."
                 .to_string(),
         ));
     }

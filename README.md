@@ -1,4 +1,4 @@
-# agent-usage
+# agent-usage-cli
 
 Show how much of your coding-agent subscription limits you have used, from
 the command line. Supports Codex (ChatGPT subscription) and Claude Code
@@ -7,7 +7,7 @@ the command line. Supports Codex (ChatGPT subscription) and Claude Code
 **Disclosure:** This project was generated using Fable 5.2.
 
 ```
-$ agent-usage all
+$ agent-usage-cli all
 Codex (plus)
   Five-hour  5% used      resets in 3h 28m (3:20 AM)
   Weekly     1% used      resets in 6d 19h 26m (Mon Nov 23, 7:18 PM)
@@ -46,9 +46,9 @@ cargo install --path .
 ## Usage
 
 ```
-agent-usage codex  [--model M] [--effort E] [--auth-file PATH]
-agent-usage claude [--credentials-file PATH] [--raw]
-agent-usage all    [--only codex,claude] [--codex-model M] [--codex-effort E]
+agent-usage-cli codex  [--model M] [--effort E] [--auth-file PATH]
+agent-usage-cli claude [--credentials-file PATH] [--raw]
+agent-usage-cli all    [--only codex,claude] [--codex-model M] [--codex-effort E]
                    [--codex-auth-file PATH] [--claude-credentials-file PATH]
 ```
 
@@ -64,7 +64,7 @@ non-zero if any provider could not be queried.
   when its format changes.
 
 There is no config file and no built-in polling. To watch usage, wrap the
-command in a poller, for example `watch -n 300 agent-usage all`.
+command in a poller, for example `watch -n 300 agent-usage-cli all`.
 
 ### Where credentials are found
 
@@ -109,8 +109,8 @@ One provider prints an object; `all` prints an array of them.
 
 ## As a library
 
-The crate also builds a library, `agent_usage`, with the same queries:
-`agent_usage::fetch(Provider, &Options)` and `agent_usage::fetch_all`.
+The crate also builds a library, `agent_usage_cli`, with the same queries:
+`agent_usage_cli::fetch(Provider, &Options)` and `agent_usage_cli::fetch_all`.
 
 ## Development and releases
 
@@ -122,7 +122,7 @@ Actions tab.
 To publish a release, set `version` in `Cargo.toml`, commit, then tag that
 commit `vX.Y.Z` and push the tag. The release workflow checks that the tag
 matches the version, checks formatting and lints, runs the tests, builds
-`agent-usage.exe` for Windows x86-64, and attaches it to a new GitHub Release.
+`agent-usage-cli.exe` for Windows x86-64, and attaches it to a new GitHub Release.
 Each release also includes `.zip` and `.tar.gz` source archives of the tagged
 commit, including `Cargo.lock`, for building from source. The executable and
 both archives have SHA-256 checksums. Releases in this private repository
