@@ -60,8 +60,7 @@ fn load_credentials(credentials_file: Option<&Path>) -> Result<Credentials, Erro
 
     if !path.is_file() {
         return Err(Error::Credentials(format!(
-            "Claude credentials not found: {}. Log in with Claude Code, or point \
-             --credentials-file at its .credentials.json.",
+            "Claude credentials not found: {}. Log in with Claude Code, or give the path to its .credentials.json.",
             path.display()
         )));
     }

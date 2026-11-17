@@ -134,6 +134,26 @@ fn parse_window(name: &str, headers: &HashMap<String, String>) -> Option<Metric>
     ))
 }
 
+/// The human-readable part of an error body: the server's own message when
+/// the body is JSON that carries one, otherwise the body itself.
+fn error_message(body: &str) -> Option<String> {
+    let body = body.trim();
+    if body.is_empty() {
+        return None;
+    }
+    let message = serde_json::from_str::<Value>(body).ok().and_then(|value| {
+        [
+            value.pointer("/error/message"),
+            value.get("detail"),
+            value.get("message"),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(|found| found.as_str().map(str::to_string))
+    });
+    Some(message.unwrap_or_else(|| body.to_string()))
+}
+
 /// Build a report from the HTTP status, the lowercase `x-codex-*` headers,
 /// and the error body (for statuses of 400 and above).
 fn build_report(
@@ -177,8 +197,8 @@ fn build_report(
         } else if status == 200 || status == 429 {
             format!("Codex returned no quota headers (HTTP {status}).")
         } else {
-            match error_body.filter(|body| !body.trim().is_empty()) {
-                Some(body) => format!("Codex returned HTTP {status}: {}", body.trim()),
+            match error_body.and_then(error_message) {
+                Some(message) => format!("Codex returned HTTP {status}: {message}"),
                 None => format!("Codex returned HTTP {status}."),
             }
         });
@@ -389,5 +409,21 @@ mod tests {
         let error = report.error.unwrap();
         assert!(error.contains("HTTP 400"));
         assert!(error.contains("Unsupported model"));
+    }
+
+    #[test]
+    fn json_error_bodies_are_reduced_to_their_message() {
+        let report = build_report(
+            400,
+            &HashMap::new(),
+            Some(
+                r#"{"detail":"d","error":{"code":"model_not_found","message":"Model not supported."}}"#,
+            ),
+            &CodexOptions::default(),
+        );
+        assert_eq!(
+            report.error.unwrap(),
+            "Codex returned HTTP 400: Model not supported."
+        );
     }
 }
