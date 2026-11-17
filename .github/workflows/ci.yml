@@ -22,7 +22,7 @@ jobs:
       - run: cargo clippy -p agent-usage-core -p agent-usage-cli --all-targets --locked -- -D warnings
       - run: cargo test -p agent-usage-core -p agent-usage-cli --locked
       - run: cargo build -p agent-usage-cli --release --locked
-  windows:
+  gui:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
