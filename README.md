@@ -110,6 +110,16 @@ One provider prints an object; `all` prints an array of them.
 The crate also builds a library, `agent_usage`, with the same queries:
 `agent_usage::fetch(Provider, &Options)` and `agent_usage::fetch_all`.
 
+## Development and releases
+
+Every push and pull request runs formatting, lint, and tests on GitHub
+Actions (`.github/workflows/ci.yml`).
+
+To publish a release, set `version` in `Cargo.toml`, commit, then tag that
+commit `vX.Y.Z` and push the tag. The release workflow checks that the tag
+matches the version, runs the tests, builds `agent-usage.exe`, and attaches
+it to a new GitHub Release with a SHA-256 checksum.
+
 ## License
 
 MIT
