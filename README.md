@@ -36,7 +36,7 @@ The GUI installer is written under the root `target/release/bundle/nsis/`.
 
 ## Shared releases
 
-The initial combined version is **0.2.0** (not yet released). All Rust packages
+The initial combined version is **0.1.0**. All Rust packages
 inherit the root `[workspace.package].version`. Set that version and the GUI
 `package.json` and both root-package version entries in `package-lock.json`
 together. Run `python scripts/check-version.py` to verify consistency.
@@ -47,15 +47,15 @@ with separate Windows CLI and GUI installer downloads, whole-workspace ZIP and
 TAR.GZ source archives, and a checksum for every asset. Source builders need the
 whole workspace because both applications use local library dependencies.
 
-No remote is configured yet. Repository creation and pushing are separate steps.
+Releases are published from the shared repository: https://github.com/judealnas/agent-usage.
 
 ## Imported history
 
 Both original histories are ancestors of `main`, with their commit hashes
 preserved. The CLI's local co-author edits are included. The GUI's pending
 changes were captured in the merge commit without modifying its original checkout.
-Historical CLI tags use `cli-` prefixes, such as `cli-v0.1.1`;
-future combined releases use plain `vX.Y.Z` tags.
+Combined releases use plain `vX.Y.Z` tags. Historical application tags
+are not retained in this repository.
 
 ## License
 
