@@ -4,4 +4,4 @@ default-members = ["crates/agent-usage-core", "crates/agent-usage-cli"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
