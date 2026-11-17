@@ -4,6 +4,8 @@ Show how much of your coding-agent subscription limits you have used, from
 the command line. Supports Codex (ChatGPT subscription) and Claude Code
 (Claude subscription).
 
+**Disclosure:** This project was generated using Fable 5.2.
+
 ```
 $ agent-usage all
 Codex (plus)
