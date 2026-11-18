@@ -520,6 +520,15 @@ input.invalid {
   background: var(--accent);
   color: #fff;
 }
-.cli-settings { margin-top: 16px; }
+.settings-overview { gap: 20px; }
+.settings-group { display: flex; flex-direction: column; gap: 8px; }
+.settings-group > h2 { padding: 0 2px; }
+.general-settings { gap: 20px; }
+.settings-option, .cli-settings { display: flex; flex-direction: column; gap: 8px; }
+.settings-overview h3 { margin: 0; }
+.settings-overview .switch { white-space: normal; align-items: flex-start; line-height: 1.5; }
+.settings-overview .switch input { margin-top: 2px; }
+.cli-settings > button { align-self: flex-start; }
+.cli-conflicts { margin: 0; }
 .cli-conflicts { padding-left: 20px; overflow-wrap: anywhere; font-size: 12px; }
 .cli-conflicts:empty, .cli-settings .form-error:empty { display: none; }

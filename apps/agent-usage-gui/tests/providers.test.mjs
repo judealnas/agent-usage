@@ -130,3 +130,36 @@ test("CLI enable failure refreshes the conflict warning and restores the checkbo
     assert.match(t.doc.querySelector(".cli-settings .form-error").textContent,/Independent CLI/);
   }finally{t.dom.window.close();}
 });
+
+
+test("settings headings sit outside cards and General changes save without leaving settings", async()=>{
+  const t=await setup();try{
+    t.button("Settings").click();await settle();
+    const groups=[...t.doc.querySelectorAll(".settings-group")];
+    assert.deepEqual(groups.map(g=>g.firstElementChild.textContent),["General","Providers","About"]);
+    assert.ok(groups.every(g=>g.lastElementChild.classList.contains("settings-section")));
+    assert.equal(t.button("Save"),undefined);assert.equal(t.button("Cancel"),undefined);
+    t.change(t.input("Red at (% used)"),"75");await settle();
+    const saves=t.calls.filter(c=>c.command==="save_preferences");
+    assert.equal(saves.length,1);assert.equal(saves[0].args.preferences.thresholds.critical,75);
+    assert.ok(t.doc.querySelector(".settings-overview"));
+    const warning=t.doc.querySelector(".general-settings .settings-option .switch input");
+    warning.click();await settle();
+    assert.equal(t.calls.filter(c=>c.command==="save_preferences").at(-1).args.preferences.warn_fast_polling,false);
+    t.change(t.input("Red at (% used)"),"0");await settle();
+    assert.equal(t.calls.filter(c=>c.command==="save_preferences").length,2);
+    t.button("Add provider").click();assert.ok(t.button("Save"));assert.ok(t.button("Cancel"));
+  }finally{t.dom.window.close();}
+});
+
+test("failed automatic save restores the saved value and shows an error", async()=>{
+  const t=await setup();try{
+    const invoke=t.win.host.invoke;
+    t.win.host.invoke=async(command,args)=>{if(command==="save_preferences")throw new Error("Disk unavailable");return invoke(command,args);};
+    t.button("Settings").click();await settle();
+    t.change(t.input("Red at (% used)"),"70");await settle();
+    assert.equal(t.input("Red at (% used)").value,"90");
+    assert.equal(t.input("Red at (% used)").disabled,false);
+    assert.match(t.doc.querySelector(".general-settings > .form-error").textContent,/Disk unavailable/);
+  }finally{t.dom.window.close();}
+});

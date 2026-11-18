@@ -518,7 +518,7 @@ function cliSettings(): HTMLElement {
       : !next.available ? "The bundled CLI is missing. Reinstall the GUI to restore it."
       : next.enabled && !next.managed ? "The bundled CLI is already on PATH through an entry managed outside this app."
       : next.enabled ? "Enabled. Open a new terminal and run agent-usage-cli. It also works while the GUI is closed."
-      : "Make the bundled CLI available in new terminals. Changes apply immediately, including if you cancel this settings form.";
+      : "Make the bundled CLI available in new terminals. Changes apply immediately.";
   };
   const update = async (enabled?: boolean) => {
     toggle.disabled = true;
@@ -544,8 +544,10 @@ function cliSettings(): HTMLElement {
   return section;
 }
 
+let preferencesSave: Promise<void> = Promise.resolve();
+
 function renderSettings(): void {
-  const form = el("form", "settings");
+  const form = el("form", "settings settings-overview");
 
   const numberField = (label: string, value: number) => {
     const field = el("label", "field");
@@ -583,43 +585,51 @@ function renderSettings(): void {
   const errorEl = el("div", "form-error");
   errorEl.hidden = true;
 
-  const actions = el("div", "actions");
-  const cancel = el("button", undefined, "Cancel");
-  cancel.type = "button";
-  cancel.addEventListener("click", () => {
-    view = "cards";
-    render();
-  });
-  const save = el("button", "primary", "Save");
-  save.type = "submit";
-  actions.append(cancel, save);
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  errorEl.setAttribute("role", "alert");
+  const savePreferences = () => {
+    if (!critical.input.reportValidity()) return;
     const preferences = {
       thresholds: { critical: Number(critical.input.value) },
       warn_fast_polling: fast.checked,
     };
-    try {
-      settings = await invoke<Settings>("save_preferences", { preferences });
-      view = "cards";
-      render();
-    } catch (error) {
-      errorEl.textContent = String(error);
-      errorEl.hidden = false;
-    }
+    critical.input.disabled = fast.disabled = true;
+    errorEl.hidden = true;
+    preferencesSave = preferencesSave.then(async () => {
+      try {
+        const saved = await invoke<Settings>("save_preferences", { preferences });
+        settings.thresholds = saved.thresholds;
+        settings.warn_fast_polling = saved.warn_fast_polling;
+      } catch (error) {
+        critical.input.value = String(settings.thresholds.critical);
+        fast.checked = settings.warn_fast_polling;
+        updatePreview();
+        errorEl.textContent = `Could not save settings: ${String(error)}`;
+        errorEl.hidden = false;
+      } finally {
+        critical.input.disabled = fast.disabled = false;
+      }
+    });
+  };
+  critical.input.addEventListener("change", savePreferences);
+  fast.addEventListener("change", savePreferences);
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    savePreferences();
   });
 
-  const general = el("section", "settings-section");
-  general.setAttribute("aria-label", "General");
-  general.append(
-    el("h2", undefined, "General"),
-    el("h3", undefined, "Bar colors"),
-    critical.field, colorHelp, preview, previewLabels, fastLabel, cliSettings(),
-  );
-  const providers = el("section", "settings-section");
-  providers.setAttribute("aria-label", "Providers");
-  providers.append(el("h2", undefined, "Providers"));
+  const sectionCard = (title: string, card: HTMLElement) => {
+    const section = el("section", "settings-group");
+    section.setAttribute("aria-label", title);
+    section.append(el("h2", undefined, title), card);
+    return section;
+  };
+  const general = el("div", "settings-section general-settings");
+  const colors = el("div", "settings-option");
+  colors.append(el("h3", undefined, "Bar colors"), critical.field, colorHelp, preview, previewLabels);
+  const polling = el("div", "settings-option");
+  polling.append(el("h3", undefined, "Refresh warnings"), fastLabel);
+  general.append(colors, polling, cliSettings());
+  const providers = el("div", "settings-section");
   for (const entry of settings.providers) {
     const button = el("button", "provider-entry", providerName(entry.id));
     button.type = "button";
@@ -629,8 +639,7 @@ function renderSettings(): void {
   }
   const add = iconButton("plus", "Add provider", () => renderEntryEditor());
   providers.append(add);
-  const about = el("section", "settings-section about");
-  about.setAttribute("aria-label", "About");
+  const about = el("div", "settings-section about");
   const repository = el("a", undefined, "GitHub repository");
   repository.href = meta.repository;
   repository.addEventListener("click", async event => {
@@ -639,12 +648,12 @@ function renderSettings(): void {
     catch (error) { errorEl.textContent = String(error); errorEl.hidden = false; }
   });
   about.append(
-    el("h2", undefined, "About"),
     el("div", undefined, `Author: ${meta.author}`),
     el("div", undefined, `Version: ${meta.version}`),
     repository,
   );
-  form.append(general, providers, errorEl, actions, about);
+  general.append(errorEl);
+  form.append(sectionCard("General", general), sectionCard("Providers", providers), sectionCard("About", about));
   contentEl.replaceChildren(form);
 }
 

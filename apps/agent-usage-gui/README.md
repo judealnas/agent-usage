@@ -56,7 +56,8 @@ the GUI's provider configuration.
 
 The default install folder is `%LOCALAPPDATA%\Agent Usage`, containing both
 `agent-usage-gui.exe` and `agent-usage-cli.exe`. No administrator access is needed.
-CLI changes apply immediately; Cancel in the settings form does not undo them.
+General settings save automatically when changed. Save and Cancel are available
+only in the provider editor.
 
 Before enabling, the GUI checks the current persisted user and system PATH for
 other `agent-usage-cli` executables or command wrappers. It shows conflicts and
