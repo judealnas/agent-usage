@@ -19,21 +19,19 @@ Claude Code (max)
 
 ## Read this first
 
-- **Both providers are queried through undocumented endpoints**, using the
-  login tokens the official tools already store on your machine (the Codex
-  CLI's `auth.json` and Claude Code's `.credentials.json`). These endpoints
-  can change or stop working without notice.
+- **Inference and Claude queries use undocumented HTTP endpoints.** Codex's
+  App Server strategy uses the documented `account/rateLimits/read` method
+  through an installed official Codex CLI.
 - **This is outside what the providers document.** Anthropic's Claude Code
   legal page says OAuth authentication is "designed to support ordinary use
   of Claude Code and other native Anthropic applications" and that Anthropic
   may enforce this without notice. Use this tool at your own risk.
-- **The Codex query is a real request.** Codex has no usage endpoint, so each
-  query sends one minimal inference request and reads the quota from the
-  response headers. That spends a very small amount of quota every time.
-  The Claude query costs nothing.
-- **Tokens stay put.** They are read from disk on each query, sent only to
-  the provider's own server, and never stored, logged, or refreshed. If a
-  token has expired, run the official tool once to refresh it.
+- **Codex inference refreshes consume quota.** App Server refreshes read account
+  limits without starting an inference turn. The sources can measure different
+  quota groups; neither is assumed to belong exclusively to a particular model.
+- **Authentication depends on strategy.** Inference and Claude read their configured
+  credential files. App Server uses the official Codex login and its own credential
+  refresh behavior. This monitor does not copy tokens between the two strategies.
 
 ## Install
 
@@ -44,6 +42,38 @@ cargo install --path crates/agent-usage-cli --locked
 ```
 
 ## Usage
+
+### Codex strategies
+
+```text
+agent-usage-cli codex --source account
+agent-usage-cli codex --source inference
+agent-usage-cli codex --source both --json
+agent-usage-cli codex --source account --codex-bin C:\path\codex.exe --codex-home C:\path\codex-home
+agent-usage-cli all --codex-source both
+```
+
+Inference remains the default. Account mode requires an installed, logged-in
+official Codex CLI supporting `account/rateLimits/read`. It inherits `CODEX_HOME`
+unless `--codex-home` overrides it. It does not use `--auth-file` or the inference
+token environment overrides. `--codex-bin` and `--codex-home` also work on `all`.
+No failed account request silently falls back to inference.
+
+Model, effort, and auth-file flags are rejected in account-only mode. Account
+process flags are rejected in inference-only mode. In `both`, each applies to its
+own source; accounts may differ if their authentication configurations differ.
+
+Account/both JSON uses a `schema_version: 2` envelope with `sources` and `providers`
+arrays. Each source retains its quota groups, identifiers, windows, enforcement
+state, timestamp, and errors. Existing inference-only JSON is unchanged. A partial
+failure retains successful readings and exits with code 1; invalid options exit 2.
+
+`--source account --raw` returns the RPC result payload. `--source both --raw`
+returns a versioned array of source results/errors. Default inference `--raw`
+retains the existing `{status, headers}` shape. Raw output takes precedence over
+`--json`. An account request has a 30-second deadline plus a short shutdown grace.
+
+### Existing commands
 
 ```
 agent-usage-cli codex  [--model M] [--effort E] [--auth-file PATH] [--raw]
@@ -78,12 +108,13 @@ command in a poller, for example `watch -n 300 agent-usage-cli all`.
 | Codex | `--auth-file`, then `CODEX_ACCESS_TOKEN` (with optional `CODEX_ACCOUNT_ID`), then `$CODEX_HOME/auth.json`, then `~/.codex/auth.json` |
 | Claude Code | `--credentials-file`, then `$CLAUDE_CONFIG_DIR/.credentials.json`, then `~/.claude/.credentials.json` |
 
-Credentials kept in an OS keychain instead of a file are not supported,
+For inference and Claude, credentials kept in an OS keychain instead of a file are not supported,
 apart from passing a Codex token through `CODEX_ACCESS_TOKEN`.
 
 ## JSON output
 
-One provider prints an object; `all` prints an array of them.
+With the default inference strategy, one provider prints an object; `all` prints
+an array of them. Account/both mode uses the versioned envelope described above.
 
 ```json
 {

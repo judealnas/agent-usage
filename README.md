@@ -12,8 +12,10 @@ installable; the GUI does not require the CLI executable.
 - [GUI](apps/agent-usage-window/README.md): Tauri desktop window.
 - `crates/agent-usage-core`: shared provider queries, credential lookup, and reports.
 
-Both providers use undocumented endpoints. A Codex query sends a minimal inference
-request and consumes quota. See the application READMEs for details.
+Codex supports two measurement strategies: the existing inference probe (which
+consumes quota) and the official Codex App Server account query (which does not
+start an inference turn). Inference and Claude queries use undocumented HTTP
+endpoints. See the application READMEs for setup and source selection.
 
 ## Development
 

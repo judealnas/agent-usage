@@ -1,6 +1,6 @@
 //! Codex (ChatGPT subscription) usage.
 //!
-//! There is no usage endpoint, so this sends one minimal inference request
+//! This inference strategy sends one minimal inference request
 //! to the internal Codex endpoint and reads the quota from the `x-codex-*`
 //! response headers. Each call consumes a very small amount of quota. The
 //! endpoint is undocumented and may change without notice.
