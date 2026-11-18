@@ -483,6 +483,67 @@ function enableDragging(card: HTMLElement, header: HTMLElement): void {
 
 // ---- Settings view ----
 
+interface CliStatus {
+  supported: boolean;
+  available: boolean;
+  enabled: boolean;
+  managed: boolean;
+  conflicts: string[];
+}
+
+function cliSettings(): HTMLElement {
+  const section = el("div", "cli-settings");
+  const label = el("label", "switch");
+  const toggle = el("input");
+  toggle.type = "checkbox";
+  toggle.disabled = true;
+  toggle.setAttribute("aria-label", "Enable command line interface");
+  label.append(toggle, el("span", undefined, "Enable agent-usage-cli command"));
+  const message = el("p", "setting-help", "Checking CLI installation…");
+  message.setAttribute("role", "status");
+  const paths = el("ul", "cli-conflicts");
+  const error = el("p", "form-error");
+  error.setAttribute("role", "alert");
+  const check = el("button", undefined, "Check again");
+  check.type = "button";
+  let status: CliStatus | undefined;
+  const display = (next: CliStatus) => {
+    status = next;
+    toggle.checked = next.enabled;
+    // Always allow removal of our own registration, even if a conflict appeared later.
+    toggle.disabled = !next.supported || (next.enabled ? !next.managed : !next.available || next.conflicts.length > 0);
+    paths.replaceChildren(...next.conflicts.map(path => el("li", undefined, path)));
+    message.textContent = !next.supported ? "CLI integration is currently available on Windows only."
+      : next.conflicts.length ? "An independently installed CLI was found. Remove it from PATH yourself, then check again to enable the bundled CLI. Your existing installation will not be changed."
+      : !next.available ? "The bundled CLI is missing. Reinstall the GUI to restore it."
+      : next.enabled && !next.managed ? "The bundled CLI is already on PATH through an entry managed outside this app."
+      : next.enabled ? "Enabled. Open a new terminal and run agent-usage-cli. It also works while the GUI is closed."
+      : "Make the bundled CLI available in new terminals. Changes apply immediately, including if you cancel this settings form.";
+  };
+  const update = async (enabled?: boolean) => {
+    toggle.disabled = true;
+    check.disabled = true;
+    error.textContent = "";
+    try {
+      display(enabled === undefined
+        ? await invoke<CliStatus>("get_cli_status")
+        : await invoke<CliStatus>("set_cli_enabled", { enabled }));
+    } catch (reason) {
+      error.textContent = String(reason);
+      // Refresh after failed mutation: the conflict may have appeared since opening settings.
+      try { display(await invoke<CliStatus>("get_cli_status")); }
+      catch { if (status) toggle.checked = status.enabled; toggle.disabled = true; }
+    } finally {
+      check.disabled = false;
+    }
+  };
+  toggle.addEventListener("change", () => void update(toggle.checked));
+  check.addEventListener("click", () => void update());
+  section.append(el("h3", undefined, "Command line interface"), label, message, paths, error, check);
+  void update();
+  return section;
+}
+
 function renderSettings(): void {
   const form = el("form", "settings");
 
@@ -554,7 +615,7 @@ function renderSettings(): void {
   general.append(
     el("h2", undefined, "General"),
     el("h3", undefined, "Bar colors"),
-    critical.field, colorHelp, preview, previewLabels, fastLabel,
+    critical.field, colorHelp, preview, previewLabels, fastLabel, cliSettings(),
   );
   const providers = el("section", "settings-section");
   providers.setAttribute("aria-label", "Providers");

@@ -43,6 +43,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
  "tokio",
+ "windows-sys 0.61.2",
+ "winreg",
 ]
 
 [[package]]

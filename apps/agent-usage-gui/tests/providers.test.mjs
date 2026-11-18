@@ -22,7 +22,7 @@ const bundle = await build({
 });
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const settle = () => new Promise(resolve => setImmediate(resolve));
-async function setup() {
+async function setup(cli = {supported:true,available:true,enabled:false,managed:false,conflicts:[]}) {
   const dom = new JSDOM(html, {runScripts:"outside-only",url:"http://localhost"});
   const win = dom.window;
   const calls=[];
@@ -31,6 +31,8 @@ async function setup() {
   win.host={listener:null,invoke:async(command,args)=>{
     calls.push({command,args});
     if(command==="get_meta")return {providers:[{id:"codex",name:"Codex"},{id:"claude",name:"Claude"}],codex_efforts:["low","high"]};
+    if(command==="get_cli_status") return structuredClone(cli);
+    if(command==="set_cli_enabled"){ if(cli.conflicts.length && args.enabled) throw new Error("Independent CLI found"); cli.enabled=args.enabled; cli.managed=args.enabled; return structuredClone(cli); }
     if(command==="get_settings")return structuredClone(settings);
     if(command==="save_entry"){
       const draft=args.entry;
@@ -93,5 +95,38 @@ test("obsolete reports are ignored and elapsed reset times retain measured usage
     t.win.host.listener({payload:{entry_id:"entry-1",generation:0,report:{...report,error:"Offline"},source_report:null}});
     assert.ok(t.doc.querySelector(".card").classList.contains("stale"));
     assert.ok(t.doc.querySelector(".card-body").textContent.includes("42%"));
+  }finally{t.dom.window.close();}
+});
+
+test("CLI conflict disables enabling and Check again rechecks without changing installations", async()=>{
+  const cli={supported:true,available:true,enabled:false,managed:false,conflicts:["C:\\Tools\\agent-usage-cli.exe"]};
+  const t=await setup(cli);try{
+    t.button("Settings").click();await settle();
+    const toggle=t.doc.querySelector('[aria-label="Enable command line interface"]');
+    assert.equal(toggle.disabled,true);
+    assert.ok(t.doc.querySelector(".cli-conflicts").textContent.includes(cli.conflicts[0]));
+    assert.equal(t.calls.filter(c=>c.command==="set_cli_enabled").length,0);
+    cli.conflicts=[];t.button("Check again").click();await settle();
+    assert.equal(toggle.disabled,false);
+    toggle.click();await settle();
+    assert.equal(toggle.checked,true);
+    assert.deepEqual(t.calls.filter(c=>c.command==="set_cli_enabled").map(c=>c.args.enabled),[true]);
+    cli.conflicts=["C:\\Other\\agent-usage-cli.exe"];
+    t.button("Check again").click();await settle();
+    assert.equal(toggle.disabled,false); // still allow removing our own registration
+    toggle.click();await settle();
+    assert.equal(toggle.checked,false);assert.equal(toggle.disabled,true);
+  }finally{t.dom.window.close();}
+});
+
+test("CLI enable failure refreshes the conflict warning and restores the checkbox", async()=>{
+  const cli={supported:true,available:true,enabled:false,managed:false,conflicts:[]};
+  const t=await setup(cli);try{
+    t.button("Settings").click();await settle();
+    const toggle=t.doc.querySelector('[aria-label="Enable command line interface"]');
+    cli.conflicts=["C:\\Tools\\agent-usage-cli.exe"];
+    toggle.click();await settle();
+    assert.equal(toggle.checked,false);assert.equal(toggle.disabled,true);
+    assert.match(t.doc.querySelector(".cli-settings .form-error").textContent,/Independent CLI/);
   }finally{t.dom.window.close();}
 });

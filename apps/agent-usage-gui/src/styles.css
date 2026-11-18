@@ -520,3 +520,6 @@ input.invalid {
   background: var(--accent);
   color: #fff;
 }
+.cli-settings { margin-top: 16px; }
+.cli-conflicts { padding-left: 20px; overflow-wrap: anywhere; font-size: 12px; }
+.cli-conflicts:empty, .cli-settings .form-error:empty { display: none; }

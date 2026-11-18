@@ -2,7 +2,8 @@
 
 A shared Rust library, command-line tool, and Windows desktop window for viewing
 Codex and Claude Code subscription usage. The CLI and GUI are independently
-installable; the GUI does not require the CLI executable.
+installable. The GUI installer also bundles the CLI, which can be enabled from
+Settings > General > Command line interface as `agent-usage-cli`.
 
 **Disclosure:** The CLI project was generated using Fable 5.2.
 
@@ -34,7 +35,9 @@ npm run tauri build -- --ci -- --locked
 
 The GUI installer is written under the root `target/release/bundle/nsis/`.
 `cargo test` defaults to the core and CLI; on Windows, build the frontend with
-`npm run build` in the GUI directory, then run `cargo test --workspace` at the root.
+`npm run prepare:cli` and `npm run build` in the GUI directory, then run
+`cargo test --workspace` at the root. Tauri development and installer builds
+automatically prepare the bundled CLI.
 
 ## Shared releases
 

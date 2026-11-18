@@ -43,6 +43,8 @@ jobs:
         working-directory: apps/agent-usage-gui
       - run: npm test
         working-directory: apps/agent-usage-gui
+      - run: npm run prepare:cli
+        working-directory: apps/agent-usage-gui
       - run: npm run build
         working-directory: apps/agent-usage-gui
       - run: cargo fmt --all --check

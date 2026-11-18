@@ -5,7 +5,7 @@ subscription limits you have used. Supports Codex (ChatGPT subscription)
 and Claude Code (Claude subscription). Windows only for now.
 
 It uses the local `agent-usage-core` Rust library shared with the CLI.
-The CLI executable is not required.
+The installer also includes `agent-usage-cli.exe`; using the CLI is optional.
 
 ## Read this first
 
@@ -42,6 +42,34 @@ npm run tauri build    # build an installer under the workspace root target/rele
 
 Build from the complete monorepo checkout. See the [workspace README](../../README.md) for shared releases.
 
+GUI development and installer builds automatically build and stage the CLI. Before
+running Cargo checks directly on a clean checkout, run `npm run prepare:cli` here.
+Generated binaries under `src-tauri/binaries/` are ignored by Git.
+
+## Command line interface
+
+In **Settings > General > Command line interface**, enable **agent-usage-cli**.
+This adds the GUI installation folder to your Windows user PATH. Open a new
+terminal (restart your terminal app if necessary), then run `agent-usage-cli --help`.
+The CLI works while the GUI is closed. It uses its own command-line options, not
+the GUI's provider configuration.
+
+The default install folder is `%LOCALAPPDATA%\Agent Usage`, containing both
+`agent-usage-gui.exe` and `agent-usage-cli.exe`. No administrator access is needed.
+CLI changes apply immediately; Cancel in the settings form does not undo them.
+
+Before enabling, the GUI checks the current persisted user and system PATH for
+other `agent-usage-cli` executables or command wrappers. It shows conflicts and
+blocks enabling until you remove the conflicting installation from PATH yourself.
+**Check again** reloads PATH without restarting the GUI. Executables outside PATH,
+shell aliases, and shell-specific PATH additions are not detected.
+
+Disabling removes only the exact PATH entry added by this app. Existing PATH
+entries and independent CLI installations are left alone. Uninstall removes the
+app-owned entry; an enabled preference is retained so reinstalling or upgrading
+can restore it, provided no independent CLI conflicts. The standalone CLI remains
+available as a separate release download.
+
 ## Using the window
 
 **Title bar** (drag it to move the window):
@@ -70,9 +98,9 @@ Drag the window's side edges to change its width. The height fits the content up
 to the available screen height, then scrolls. Cards sit side by side when the
 window is wide enough.
 
-**Settings** has two sections:
+**Settings** includes:
 
-- **General:** Bar colors and the fast-refresh warning. Bars shift continuously
+- **General:** Bar colors, the fast-refresh warning, and CLI integration. Bars shift continuously
   from green at 0% through yellow to red at the configured **Red at (% used)**
   threshold (1–100%, default 90%). They stay red above that threshold. Existing
   red thresholds are retained; the former amber threshold is no longer used.

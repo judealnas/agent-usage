@@ -1,3 +1,4 @@
+pub mod cli_integration;
 mod entry_settings;
 mod requests;
 #[allow(dead_code)] // Legacy schema retained for migration and its regression tests.
@@ -376,6 +377,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_meta,
+            get_cli_status,
+            set_cli_enabled,
             open_repository,
             get_settings,
             start,
@@ -391,4 +394,14 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
+}
+
+#[tauri::command]
+fn get_cli_status() -> Result<cli_integration::CliStatus, String> {
+    cli_integration::status()
+}
+
+#[tauri::command]
+fn set_cli_enabled(enabled: bool) -> Result<cli_integration::CliStatus, String> {
+    cli_integration::set_enabled(enabled, false)
 }
