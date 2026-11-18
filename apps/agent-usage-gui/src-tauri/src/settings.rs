@@ -112,12 +112,12 @@ fn blank_to_none(path: &mut Option<PathBuf>) {
 }
 
 impl Settings {
-    /// Where the settings file lives: `%APPDATA%\agent-usage-window\settings.json`
+    /// Where the settings file lives: `%APPDATA%\agent-usage-gui\settings.json`
     /// on Windows, and the platform's config directory elsewhere.
     pub fn default_path() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("agent-usage-window")
+            .join("agent-usage-gui")
             .join("settings.json")
     }
 

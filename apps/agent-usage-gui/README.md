@@ -133,8 +133,11 @@ Run `npm test` for color and provider-editor DOM tests. These use mocked Tauri
 commands; Rust tests cover credential matching, migration, and fake App Server
 processes without live credentials.
 
-The application identifier and settings directory retain their original names for
-compatibility with existing installations. Settings are saved to `%APPDATA%\agent-usage-window\settings.json`. The app
+The application identifier is `com.judealnas.agentusagegui`. Settings are saved to
+`%APPDATA%\agent-usage-gui\settings.json`. On first launch, existing settings and
+saved window position/size are copied from the previous locations if the new files
+do not exist. Original files are retained, and newer settings are never overwritten.
+Credential files and CLI PATH registration are unchanged. The app
 rewrites that file whenever something changes, so it is not meant for hand
 editing.
 

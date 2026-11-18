@@ -1,0 +1,7 @@
+allow-branch = ["main"]
+publish = false
+shared-version = true
+consolidate-commits = true
+tag-name = "v{{version}}"
+pre-release-commit-message = "Release shared CLI and GUI version {{version}}"
+tag-message = "Release v{{version}}"

@@ -1,5 +1,6 @@
 pub mod cli_integration;
 mod entry_settings;
+mod migration;
 mod requests;
 #[allow(dead_code)] // Legacy schema retained for migration and its regression tests.
 mod settings;
@@ -353,6 +354,9 @@ fn remove_entry(app: AppHandle, state: State<AppState>, id: String) -> Result<Se
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    migration::migrate(&context.config().identifier)
+        .expect("Could not migrate existing Agent Usage settings; original files were preserved");
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -392,7 +396,7 @@ pub fn run() {
             save_entry,
             remove_entry,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running the application");
 }
 

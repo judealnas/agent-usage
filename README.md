@@ -41,12 +41,19 @@ automatically prepare the bundled CLI.
 
 ## Shared releases
 
-The initial combined version is **0.1.0**. All Rust packages
-inherit the root `[workspace.package].version`. Set that version and the GUI
-`package.json` and both root-package version entries in `package-lock.json`
-together. Run `python scripts/check-version.py` to verify consistency.
+All Rust packages inherit the root `[workspace.package].version`. Use
+`cargo-release` to bump the shared Rust and GUI npm versions, commit, tag, and push:
 
-After committing and verifying CI, create and push `vX.Y.Z` for that version.
+```powershell
+cargo release patch --workspace                  # preview
+cargo release patch --workspace --execute        # release
+```
+
+Use `minor` instead of `patch` for a minor release. The checked-in configuration
+creates one `vX.Y.Z` tag and disables crates.io publishing. The GUI package's
+release configuration synchronizes `package.json` and `package-lock.json`.
+Run `python scripts/check-version.py` to verify consistency.
+
 The release workflow tests both applications and publishes one GitHub Release
 with separate Windows CLI and GUI installer downloads, whole-workspace ZIP and
 TAR.GZ source archives, and a checksum for every asset. Source builders need the

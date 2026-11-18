@@ -1,0 +1,4 @@
+pre-release-replacements = [
+  { file = "../package.json", search = '("version": ")[^"]+', replace = '${1}{{version}}', exactly = 1 },
+  { file = "../package-lock.json", search = '("name": "agent-usage-gui",\r?\n\s*"version": ")[^"]+', replace = '${1}{{version}}', exactly = 2 },
+]
