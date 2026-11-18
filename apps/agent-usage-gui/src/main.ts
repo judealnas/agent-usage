@@ -638,6 +638,7 @@ function renderSettings(): void {
     providers.append(button);
   }
   const add = iconButton("plus", "Add provider", () => renderEntryEditor());
+  add.classList.add("add-provider");
   providers.append(add);
   const about = el("div", "settings-section about");
   const repository = el("a", undefined, "GitHub repository");
@@ -675,6 +676,10 @@ function renderEntryEditor(entry?: ProviderSettings): void {
   const name = textField("Name (optional)", entry?.name ?? "", "Use provider and strategy name");
   const type = selectField("Provider", [["codex", "Codex"], ["claude", "Claude"]], entry?.config.kind === "claude" ? "claude" : "codex");
   const strategy = selectField("Strategy", [["inference", "Inference"], ["account", "App Server"]], entry?.config.kind === "codex_account" ? "account" : "inference");
+  const strategyHelp = el("p", "setting-help");
+  strategyHelp.id = "codex-strategy-help";
+  strategyHelp.setAttribute("aria-live", "polite");
+  strategy.input.setAttribute("aria-describedby", strategyHelp.id);
   const config = entry?.config;
   const model = textField("Model", config?.kind === "codex_inference" ? config.options.model : "gpt-6-luna");
   const effort = selectField("Effort", meta.codex_efforts.map(v => [v,v]), config?.kind === "codex_inference" ? config.options.effort : "low");
@@ -685,9 +690,13 @@ function renderEntryEditor(entry?: ProviderSettings): void {
   const fields = el("div", "settings");
   const updateFields = () => {
     strategy.field.hidden = type.input.value !== "codex";
+    strategyHelp.hidden = type.input.value !== "codex";
+    strategyHelp.textContent = strategy.input.value === "inference"
+      ? "Inference sends a small request using the selected model and effort, then reads usage limits from the response. Each refresh consumes some quota and uses the selected auth.json credentials. It can report different limits from App Server."
+      : "App Server reads account usage limits through the official Codex CLI without making an inference request. It requires Codex to be installed and logged in for the selected home directory. It can report different limits from Inference.";
     if (type.input.value === "claude") fields.replaceChildren(credentials.field);
     else if (strategy.input.value === "inference") fields.replaceChildren(auth.field, model.field, effort.field);
-    else fields.replaceChildren(executable.field, home.field, el("p", "setting-help", "Uses the official Codex login for this home directory. No inference request is made."));
+    else fields.replaceChildren(executable.field, home.field);
   };
   type.input.addEventListener("change", updateFields); strategy.input.addEventListener("change", updateFields); updateFields();
   const error = el("div", "form-error"); error.setAttribute("role", "alert");
@@ -723,7 +732,7 @@ function renderEntryEditor(entry?: ProviderSettings): void {
       render();
     } catch (e) { error.textContent = String(e); save.disabled = false; }
   };
-  section.append(el("h2", undefined, entry ? "Edit provider" : "Add provider"), name.field, type.field, strategy.field, fields);
+  section.append(el("h2", undefined, entry ? "Edit provider" : "Add provider"), name.field, type.field, strategy.field, strategyHelp, fields);
   form.append(section, error, actions); contentEl.replaceChildren(form);
 }
 
