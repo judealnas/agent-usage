@@ -5,8 +5,10 @@
 
 pub mod claude;
 pub mod codex;
+pub mod codex_account;
 pub mod model;
 pub mod options;
+pub mod sources;
 
 pub use model::{Error, Metric, Provider, UsageReport};
 pub use options::{ClaudeOptions, CodexOptions, Options};

@@ -11,6 +11,7 @@
   --warn: #d4930a;
   --critical: #d64538;
   --accent: #3a72d8;
+  --bar-lightness: 40%;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
 }
@@ -28,6 +29,7 @@
     --warn: #e8b23a;
     --critical: #ee6a5c;
     --accent: #6c9cf0;
+    --bar-lightness: 58%;
   }
 }
 
@@ -55,6 +57,11 @@ select {
 #app {
   display: flex;
   flex-direction: column;
+}
+
+#content {
+  max-height: calc(var(--available-height, 800px) - 30px);
+  overflow-y: auto;
 }
 
 #titlebar {
@@ -236,15 +243,7 @@ select {
 .bar .fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--ok);
-}
-
-.bar .fill.warn {
-  background: var(--warn);
-}
-
-.bar .fill.critical {
-  background: var(--critical);
+  background: hsl(var(--usage-hue, 120) 65% var(--bar-lightness));
 }
 
 .metric-sub,
@@ -307,6 +306,7 @@ select {
 }
 
 .switch input {
+  flex-shrink: 0;
   appearance: none;
   position: relative;
   width: 26px;
@@ -378,11 +378,67 @@ input.invalid {
   padding: 2px;
 }
 
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.provider-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.provider-entry:hover { background: var(--hover); }
+.quota-group + .quota-group { margin-top: 12px; }
+.quota-group h3 { font-size: 12px; margin: 0 0 6px; color: var(--muted); }
+[hidden] { display: none !important; }
+
 .settings h2 {
-  margin: 4px 0 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings h3 {
+  margin: 2px 0 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+}
+
+.setting-help {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.color-preview {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right,
+    hsl(120 65% var(--bar-lightness)),
+    hsl(60 65% var(--bar-lightness)),
+    hsl(0 65% var(--bar-lightness)));
+}
+
+.color-preview-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: -4px;
 }
 
 .field {

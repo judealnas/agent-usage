@@ -36,11 +36,10 @@ pub struct ProviderSettings {
     pub interval_seconds: u64,
 }
 
-/// Percent-used levels at which a bar changes color.
+/// Percent used at which the green-to-red bar gradient reaches red.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Thresholds {
-    pub warn: f64,
     pub critical: f64,
 }
 
@@ -74,21 +73,14 @@ impl ProviderSettings {
 
 impl Default for Thresholds {
     fn default() -> Self {
-        Thresholds {
-            warn: 70.0,
-            critical: 90.0,
-        }
+        Thresholds { critical: 90.0 }
     }
 }
 
 impl Thresholds {
     fn validate(&self) -> Result<(), String> {
-        let in_range = |value: f64| (0.0..=100.0).contains(&value);
-        if !in_range(self.warn) || !in_range(self.critical) {
-            return Err("Thresholds must be between 0 and 100.".to_string());
-        }
-        if self.warn >= self.critical {
-            return Err("The warn threshold must be below the critical threshold.".to_string());
+        if !self.critical.is_finite() || !(1.0..=100.0).contains(&self.critical) {
+            return Err("The red threshold must be between 1 and 100 percent.".to_string());
         }
         Ok(())
     }
@@ -306,7 +298,7 @@ mod tests {
             r#"{
                 "providers":[{"id":"codex","interval_seconds":0},{"id":"codex"}],
                 "codex":{"model":" ","effort":"extreme","auth_file":""},
-                "thresholds":{"warn":95,"critical":90}
+                "thresholds":{"warn":95,"critical":120}
             }"#,
         )
         .unwrap();
@@ -355,32 +347,50 @@ mod tests {
     }
 
     #[test]
+    fn legacy_red_threshold_is_preserved() {
+        let mut settings: Settings =
+            serde_json::from_str(r#"{"thresholds":{"warn":70,"critical":85}}"#).unwrap();
+        settings.normalize();
+        assert_eq!(settings.thresholds.critical, 85.0);
+        let json = serde_json::to_value(&settings).unwrap();
+        assert!(json["thresholds"].get("warn").is_none());
+    }
+
+    #[test]
+    fn red_threshold_requires_a_finite_percentage() {
+        for critical in [0.0, -1.0, 101.0, f64::NAN, f64::INFINITY] {
+            assert!(Thresholds { critical }.validate().is_err());
+        }
+        for critical in [1.0, 50.5, 100.0] {
+            assert!(Thresholds { critical }.validate().is_ok());
+        }
+    }
+
+    #[test]
     fn preferences_are_validated() {
         let mut settings = Settings::default();
-        let preferences = |warn: f64, critical: f64, effort: &str| Preferences {
+        let preferences = |critical: f64, effort: &str| Preferences {
             codex: CodexOptions {
                 effort: effort.to_string(),
                 ..CodexOptions::default()
             },
             claude: ClaudeOptions::default(),
-            thresholds: Thresholds { warn, critical },
+            thresholds: Thresholds { critical },
             warn_fast_polling: false,
         };
+        assert!(settings.apply_preferences(preferences(0.0, "low")).is_err());
         assert!(settings
-            .apply_preferences(preferences(90.0, 70.0, "low"))
+            .apply_preferences(preferences(120.0, "low"))
             .is_err());
         assert!(settings
-            .apply_preferences(preferences(50.0, 120.0, "low"))
-            .is_err());
-        assert!(settings
-            .apply_preferences(preferences(50.0, 80.0, "extreme"))
+            .apply_preferences(preferences(80.0, "extreme"))
             .is_err());
         assert_eq!(settings, Settings::default());
 
         settings
-            .apply_preferences(preferences(50.0, 80.0, "high"))
+            .apply_preferences(preferences(80.0, "high"))
             .unwrap();
-        assert_eq!(settings.thresholds.warn, 50.0);
+        assert_eq!(settings.thresholds.critical, 80.0);
         assert_eq!(settings.codex.effort, "high");
         assert!(!settings.warn_fast_polling);
     }

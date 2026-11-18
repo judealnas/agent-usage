@@ -13,6 +13,8 @@ import {
   type IntervalUnit,
 } from "./format";
 
+import { usageHue } from "./colors";
+
 // ---- Types mirrored from the Rust backend ----
 
 type ProviderId = string;
@@ -38,6 +40,7 @@ interface BalanceMetric {
 type Metric = WindowMetric | BalanceMetric;
 
 interface Report {
+  groups?: SourceReport["groups"];
   provider: ProviderId;
   plan: string | null;
   metrics: Metric[];
@@ -47,7 +50,22 @@ interface Report {
   error: string | null;
 }
 
+type Configuration =
+  | { kind: "codex_inference"; options: { model: string; effort: string; auth_file: string | null } }
+  | { kind: "codex_account"; options: { executable: string; codex_home: string | null; timeout_seconds: number } }
+  | { kind: "claude"; options: { credentials_file: string | null } };
+interface SourceReport {
+  source: string; fetched_at: number; error: string | null;
+  groups: { key: string; limit_id: string | null; limit_name: string | null;
+    plan: string | null; metrics: Metric[]; error: string | null;
+    ordinary_usage_allowed: boolean | null; spend_control_reached: boolean | null;
+    rate_limit_reached_type: string | null }[];
+}
+interface EntryReport { entry_id: string; generation: number; report: Report | null; source_report: SourceReport | null }
 interface ProviderSettings {
+  name: string | null;
+  config: Configuration;
+  generation: number;
   id: ProviderId;
   shown: boolean;
   auto_refresh: boolean;
@@ -56,9 +74,7 @@ interface ProviderSettings {
 
 interface Settings {
   providers: ProviderSettings[];
-  codex: { model: string; effort: string; auth_file: string | null };
-  claude: { credentials_file: string | null };
-  thresholds: { warn: number; critical: number };
+  thresholds: { critical: number };
   warn_fast_polling: boolean;
   pinned: boolean;
 }
@@ -121,8 +137,12 @@ function iconButton(icon: string, label: string, onClick: () => void): HTMLButto
   return button;
 }
 
+function configLabel(config: Configuration): string {
+  return config.kind === "codex_inference" ? "Codex — Inference" : config.kind === "codex_account" ? "Codex — App Server" : "Claude";
+}
 function providerName(id: ProviderId): string {
-  return meta.providers.find((p) => p.id === id)?.name ?? id;
+  const entry = settings.providers.find(p => p.id === id);
+  return entry ? entry.name ?? configLabel(entry.config) : id;
 }
 
 function shownProviders(): ProviderSettings[] {
@@ -144,7 +164,7 @@ function buildTitlebar(): void {
     updateTitlebar();
   });
   const refreshAll = iconButton("refresh", "Refresh all", () => void invoke("refresh_all"));
-  addButton = iconButton("plus", "Add provider", () => {
+  addButton = iconButton("plus", "Show hidden provider", () => {
     addMenuEl.hidden = !addMenuEl.hidden;
   });
   const gear = iconButton("settings", "Settings", () => {
@@ -274,10 +294,11 @@ function buildCard(provider: ProviderSettings): HTMLElement {
   return card;
 }
 
-function barLevel(usedPercent: number): string {
-  if (usedPercent >= settings.thresholds.critical) return "critical";
-  if (usedPercent >= settings.thresholds.warn) return "warn";
-  return "";
+function createFill(usedPercent: number): HTMLElement {
+  const fill = el("div", "fill");
+  fill.style.width = `${Math.min(100, Math.max(0, usedPercent))}%`;
+  fill.style.setProperty("--usage-hue", String(usageHue(usedPercent, settings.thresholds.critical)));
+  return fill;
 }
 
 function renderMetric(metric: Metric, fetchedAt: number): HTMLElement {
@@ -291,17 +312,16 @@ function renderMetric(metric: Metric, fetchedAt: number): HTMLElement {
     // The window rolled over after this reading was taken.
     const hasReset =
       metric.resets_at !== null && metric.resets_at <= now && metric.resets_at > fetchedAt;
-    const used = hasReset ? 0 : metric.used_percent;
+    const used = metric.used_percent;
 
     top.append(el("span", "value", `${formatNumber(used)}%`));
     const bar = el("div", "bar");
-    const fill = el("div", `fill ${barLevel(used)}`);
-    fill.style.width = `${Math.min(100, Math.max(0, used))}%`;
+    const fill = createFill(used);
     bar.append(fill);
     row.append(bar);
 
     if (hasReset) {
-      row.append(el("div", "metric-sub", "reset, awaiting refresh"));
+      row.append(el("div", "metric-sub", "reset time passed; awaiting refresh"));
     } else if (metric.resets_at !== null) {
       const sub = el("div", "metric-sub", `resets in ${formatCountdown(metric.resets_at - now)}`);
       sub.title = formatLocalTime(metric.resets_at);
@@ -322,8 +342,7 @@ function renderMetric(metric: Metric, fetchedAt: number): HTMLElement {
     if (metric.used !== null && metric.limit !== null && metric.limit > 0) {
       const percent = (metric.used / metric.limit) * 100;
       const bar = el("div", "bar");
-      const fill = el("div", `fill ${barLevel(percent)}`);
-      fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+      const fill = createFill(percent);
       bar.append(fill);
       row.append(bar);
     }
@@ -341,12 +360,29 @@ function updateCard(id: ProviderId): void {
 
   const title = card.querySelector(".card-title")!;
   title.replaceChildren(el("span", undefined, providerName(id)));
+  if (provider.name) title.append(el("span", "plan", ` · ${configLabel(provider.config)}`));
   if (good?.plan) title.append(el("span", "plan", ` · ${good.plan}`));
 
   const body = card.querySelector(".card-body")!;
   if (good) {
-    body.replaceChildren(...good.metrics.map((metric) => renderMetric(metric, good.fetched_at)));
-    if (good.limit_reached) body.append(el("div", "message", "Limit reached."));
+    if (good.groups) {
+      body.replaceChildren();
+      for (const group of good.groups) {
+        const section = el("section", "quota-group");
+        section.append(el("h3", undefined, group.limit_name ?? group.limit_id ?? group.key));
+        if (group.plan) section.append(el("div", "metric-sub", group.plan));
+        section.append(...group.metrics.map(metric => renderMetric(metric, good.fetched_at)));
+        if (group.ordinary_usage_allowed === false) section.append(el("div", "message", "Ordinary usage is not allowed."));
+        if (group.spend_control_reached === true) section.append(el("div", "message", "Spend control reached."));
+        if (group.rate_limit_reached_type) section.append(el("div", "message", `Limit reached: ${group.rate_limit_reached_type}`));
+        if (group.error) section.append(el("div", "message error", group.error));
+        body.append(section);
+      }
+      if (!good.groups.length) body.append(el("div", "message", "No quota groups returned."));
+    } else {
+      body.replaceChildren(...good.metrics.map((metric) => renderMetric(metric, good.fetched_at)));
+      if (good.limit_reached) body.append(el("div", "message", "Limit reached."));
+    }
   } else if (error) {
     body.replaceChildren(el("div", "message error", error));
   } else {
@@ -372,7 +408,8 @@ function updateCard(id: ProviderId): void {
   const notice = card.querySelector<HTMLElement>(".notice")!;
   const fast =
     settings.warn_fast_polling && provider.auto_refresh && provider.interval_seconds < 60;
-  const text = fast ? FAST_REFRESH_NOTICES[id] : undefined;
+  const noticeType = provider.config.kind === "codex_inference" ? "codex" : provider.config.kind === "claude" ? "claude" : "account";
+  const text = fast ? FAST_REFRESH_NOTICES[noticeType] : undefined;
   notice.hidden = text === undefined;
   notice.textContent = text ?? "";
 }
@@ -382,7 +419,7 @@ function renderCards(): void {
   const shown = shownProviders();
   if (shown.length === 0) {
     contentEl.replaceChildren(
-      el("div", "empty", "No providers shown. Use the + button above to add one."),
+      el("div", "empty", "No providers shown. Add providers in Settings, or show a hidden card using + above."),
     );
     return;
   }
@@ -442,56 +479,32 @@ function enableDragging(card: HTMLElement, header: HTMLElement): void {
 function renderSettings(): void {
   const form = el("form", "settings");
 
-  const textField = (label: string, value: string, placeholder = "") => {
-    const field = el("label", "field");
-    const input = el("input");
-    input.type = "text";
-    input.value = value;
-    input.placeholder = placeholder;
-    input.spellcheck = false;
-    field.append(el("span", undefined, label), input);
-    return { field, input };
-  };
   const numberField = (label: string, value: number) => {
     const field = el("label", "field");
     const input = el("input");
     input.type = "number";
-    input.min = "0";
+    input.min = "1";
     input.max = "100";
     input.step = "any";
+    input.required = true;
     input.value = String(value);
     field.append(el("span", undefined, label), input);
     return { field, input };
   };
 
-  const model = textField("Model", settings.codex.model);
-  const effortField = el("label", "field");
-  const effort = el("select");
-  for (const value of meta.codex_efforts) {
-    const option = el("option", undefined, value);
-    option.value = value;
-    effort.append(option);
-  }
-  effort.value = settings.codex.effort;
-  effortField.append(el("span", undefined, "Effort"), effort);
-  const codexRow = el("div", "row");
-  codexRow.append(model.field, effortField);
-
-  const authFile = textField(
-    "Codex auth file",
-    settings.codex.auth_file ?? "",
-    "Default: ~/.codex/auth.json",
-  );
-  const credentialsFile = textField(
-    "Claude credentials file",
-    settings.claude.credentials_file ?? "",
-    "Default: ~/.claude/.credentials.json",
-  );
-
-  const warn = numberField("Amber from (%)", settings.thresholds.warn);
-  const critical = numberField("Red from (%)", settings.thresholds.critical);
-  const thresholdRow = el("div", "row");
-  thresholdRow.append(warn.field, critical.field);
+  const critical = numberField("Red at (% used)", settings.thresholds.critical);
+  const colorHelp = el("p", "setting-help", "Bars shift smoothly from green at 0% through yellow to red at this percentage, and stay red above it.");
+  const preview = el("div", "color-preview");
+  preview.setAttribute("aria-hidden", "true");
+  const previewLabels = el("div", "color-preview-labels");
+  const redLabel = el("span");
+  previewLabels.append(el("span", undefined, "0% used"), redLabel);
+  const updatePreview = () => {
+    const threshold = Number(critical.input.value);
+    redLabel.textContent = critical.input.validity.valid ? `${formatNumber(threshold)}% used` : "Red threshold";
+  };
+  critical.input.addEventListener("input", updatePreview);
+  updatePreview();
 
   const fastLabel = el("label", "switch");
   const fast = el("input");
@@ -516,13 +529,7 @@ function renderSettings(): void {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const preferences = {
-      codex: {
-        model: model.input.value,
-        effort: effort.value,
-        auth_file: authFile.input.value.trim() || null,
-      },
-      claude: { credentials_file: credentialsFile.input.value.trim() || null },
-      thresholds: { warn: Number(warn.input.value), critical: Number(critical.input.value) },
+      thresholds: { critical: Number(critical.input.value) },
       warn_fast_polling: fast.checked,
     };
     try {
@@ -535,19 +542,97 @@ function renderSettings(): void {
     }
   });
 
-  form.append(
-    el("h2", undefined, "Codex"),
-    codexRow,
-    authFile.field,
-    el("h2", undefined, "Claude Code"),
-    credentialsFile.field,
-    el("h2", undefined, "Bar colors"),
-    thresholdRow,
-    fastLabel,
-    errorEl,
-    actions,
+  const general = el("section", "settings-section");
+  general.setAttribute("aria-label", "General");
+  general.append(
+    el("h2", undefined, "General"),
+    el("h3", undefined, "Bar colors"),
+    critical.field, colorHelp, preview, previewLabels, fastLabel,
   );
+  const providers = el("section", "settings-section");
+  providers.setAttribute("aria-label", "Providers");
+  providers.append(el("h2", undefined, "Providers"));
+  for (const entry of settings.providers) {
+    const button = el("button", "provider-entry", providerName(entry.id));
+    button.type = "button";
+    if (entry.name) button.append(el("span", "setting-help", configLabel(entry.config)));
+    button.addEventListener("click", () => renderEntryEditor(entry));
+    providers.append(button);
+  }
+  const add = iconButton("plus", "Add provider", () => renderEntryEditor());
+  providers.append(add);
+  form.append(general, providers, errorEl, actions);
   contentEl.replaceChildren(form);
+}
+
+function textField(label: string, value: string, placeholder = "") {
+  const field = el("label", "field");
+  const input = el("input"); input.type = "text"; input.value = value;
+  input.placeholder = placeholder; input.spellcheck = false;
+  field.append(el("span", undefined, label), input);
+  return { field, input };
+}
+function selectField(label: string, choices: [string, string][], value: string) {
+  const field = el("label", "field"); const input = el("select");
+  for (const [key, name] of choices) { const option = el("option", undefined, name); option.value = key; input.append(option); }
+  input.value = value; field.append(el("span", undefined, label), input); return { field, input };
+}
+function renderEntryEditor(entry?: ProviderSettings): void {
+  const form = el("form", "settings");
+  const section = el("section", "settings-section");
+  const name = textField("Name (optional)", entry?.name ?? "", "Use provider and strategy name");
+  const type = selectField("Provider", [["codex", "Codex"], ["claude", "Claude"]], entry?.config.kind === "claude" ? "claude" : "codex");
+  const strategy = selectField("Strategy", [["inference", "Inference"], ["account", "App Server"]], entry?.config.kind === "codex_account" ? "account" : "inference");
+  const config = entry?.config;
+  const model = textField("Model", config?.kind === "codex_inference" ? config.options.model : "gpt-6-luna");
+  const effort = selectField("Effort", meta.codex_efforts.map(v => [v,v]), config?.kind === "codex_inference" ? config.options.effort : "low");
+  const auth = textField("Auth.json file", config?.kind === "codex_inference" ? config.options.auth_file ?? "" : "", "Default Codex credentials");
+  const executable = textField("Codex executable", config?.kind === "codex_account" ? config.options.executable : "codex");
+  const home = textField("Codex home directory", config?.kind === "codex_account" ? config.options.codex_home ?? "" : "", "Default CODEX_HOME or ~/.codex");
+  const credentials = textField("Credentials file", config?.kind === "claude" ? config.options.credentials_file ?? "" : "", "Default ~/.claude/.credentials.json");
+  const fields = el("div", "settings");
+  const updateFields = () => {
+    strategy.field.hidden = type.input.value !== "codex";
+    if (type.input.value === "claude") fields.replaceChildren(credentials.field);
+    else if (strategy.input.value === "inference") fields.replaceChildren(auth.field, model.field, effort.field);
+    else fields.replaceChildren(executable.field, home.field, el("p", "setting-help", "Uses the official Codex login for this home directory. No inference request is made."));
+  };
+  type.input.addEventListener("change", updateFields); strategy.input.addEventListener("change", updateFields); updateFields();
+  const error = el("div", "form-error"); error.setAttribute("role", "alert");
+  const actions = el("div", "actions");
+  const cancel = el("button", undefined, "Cancel"); cancel.type = "button"; cancel.onclick = () => renderSettings();
+  const save = el("button", "primary", "Save"); save.type = "submit";
+  if (entry) {
+    const remove = el("button", undefined, "Remove"); remove.type = "button";
+    remove.onclick = async () => {
+      remove.disabled = true;
+      try { settings = await invoke<Settings>("remove_entry", {id: entry.id}); cardStates.delete(entry.id); render(); }
+      catch (e) { error.textContent = String(e); remove.disabled = false; }
+    };
+    actions.append(remove);
+  }
+  actions.append(cancel, save);
+  form.onsubmit = async event => {
+    event.preventDefault(); save.disabled = true;
+    const clean = (value: string) => value.trim() || null;
+    let config: Configuration;
+    if (type.input.value === "claude") config = {kind:"claude", options:{credentials_file:clean(credentials.input.value)}};
+    else if (strategy.input.value === "account") config = {kind:"codex_account", options:{executable:executable.input.value.trim(), codex_home:clean(home.input.value),timeout_seconds:30}};
+    else config = {kind:"codex_inference", options:{model:model.input.value.trim(),effort:effort.input.value,auth_file:clean(auth.input.value)}};
+    try {
+      const before = new Map(settings.providers.map(p => [p.id, p.generation]));
+      settings = await invoke<Settings>("save_entry", {entry:{id:entry?.id ?? null,name:clean(name.input.value),config}});
+      for (const p of settings.providers) {
+        if (!before.has(p.id) || before.get(p.id) !== p.generation) {
+          cardStates.delete(p.id);
+          if (p.shown) void invoke("refresh", {provider:p.id});
+        }
+      }
+      render();
+    } catch (e) { error.textContent = String(e); save.disabled = false; }
+  };
+  section.append(el("h2", undefined, entry ? "Edit provider" : "Add provider"), name.field, type.field, strategy.field, fields);
+  form.append(section, error, actions); contentEl.replaceChildren(form);
 }
 
 // ---- Rendering, ticking, and window height ----
@@ -584,6 +669,7 @@ async function fitHeight(): Promise<void> {
 }
 
 async function init(): Promise<void> {
+  document.documentElement.style.setProperty("--available-height", `${Math.max(240, (window.screen.availHeight || 800) - 48)}px`);
   document.addEventListener("contextmenu", (event) => event.preventDefault());
 
   [meta, settings] = await Promise.all([
@@ -596,17 +682,30 @@ async function init(): Promise<void> {
   new ResizeObserver(() => void fitHeight()).observe(appEl);
   window.addEventListener("resize", () => void fitHeight());
 
-  await listen<Report>("usage-report", (event) => {
-    const report = event.payload;
-    const state = cardStates.get(report.provider) ?? { good: null, error: null };
-    if (report.error) {
-      state.error = report.error;
-    } else {
-      state.good = report;
-      state.error = null;
+  await listen<EntryReport>("usage-report", (event) => {
+    const payload = event.payload;
+    const entry = settings.providers.find(p => p.id === payload.entry_id);
+    if (!entry || entry.generation !== payload.generation) return;
+    const state = cardStates.get(entry.id) ?? { good: null, error: null };
+    if (payload.source_report) {
+      const source = payload.source_report;
+      const errors = [source.error, ...source.groups.map(g => g.error)].filter(Boolean);
+      state.error = errors.join("; ") || null;
+      if (!source.error) {
+        state.good = {
+          provider: entry.id, plan: null, fetched_at: source.fetched_at,
+          groups: source.groups,
+          error: null, details: {},
+          limit_reached: source.groups.some(g => g.ordinary_usage_allowed === false || g.spend_control_reached === true || g.rate_limit_reached_type !== null),
+          metrics: source.groups.flatMap(g => g.metrics.map(metric => ({...metric, label: `${g.limit_name ?? g.limit_id ?? g.key} · ${metric.label}`}))),
+        };
+      }
+    } else if (payload.report) {
+      state.error = payload.report.error;
+      if (!payload.report.error) state.good = payload.report;
     }
-    cardStates.set(report.provider, state);
-    updateCard(report.provider);
+    cardStates.set(entry.id, state);
+    updateCard(entry.id);
   });
 
   // The backend waits for this before fetching, so no report is missed.

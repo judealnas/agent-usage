@@ -1,6 +1,9 @@
+mod entry_settings;
+mod requests;
+#[allow(dead_code)] // Legacy schema retained for migration and its regression tests.
 mod settings;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -10,7 +13,7 @@ use agent_usage_core::{Provider, UsageReport};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use settings::{Preferences, Settings};
+use entry_settings::{Configuration, EntryDraft, Preferences, Settings};
 
 /// Event carrying one finished `UsageReport` to the frontend.
 const REPORT_EVENT: &str = "usage-report";
@@ -19,10 +22,10 @@ struct AppState {
     settings_path: PathBuf,
     settings: Mutex<Settings>,
     /// Providers with a fetch running. At most one fetch per provider.
-    in_flight: Mutex<HashSet<Provider>>,
+    in_flight: Mutex<requests::Requests>,
     /// Bumped whenever a provider's timer is restarted, so that the timer
     /// task from before the restart notices and stops.
-    timer_generations: Mutex<HashMap<Provider, u64>>,
+    timer_generations: Mutex<HashMap<String, u64>>,
 }
 
 impl AppState {
@@ -31,7 +34,7 @@ impl AppState {
     }
 
     /// Apply a change, save it to disk, and return the new settings. The
-    /// change is kept in memory even if saving fails.
+    /// change is installed in memory only after saving succeeds.
     fn update(
         &self,
         change: impl FnOnce(&mut Settings) -> Result<(), String>,
@@ -39,49 +42,115 @@ impl AppState {
         let mut settings = self.settings.lock().unwrap();
         let mut next = settings.clone();
         change(&mut next)?;
-        next.normalize();
-        *settings = next.clone();
         next.save(&self.settings_path)?;
+        *settings = next.clone();
         Ok(next)
-    }
-
-    fn is_fetching(&self, provider: Provider) -> bool {
-        self.in_flight.lock().unwrap().contains(&provider)
     }
 }
 
-/// Fetch one provider and send the report to the frontend. Does nothing if
-/// that provider is already being fetched.
-async fn fetch_now(app: AppHandle, provider: Provider) {
+#[derive(Clone, Serialize)]
+struct EntryReport {
+    entry_id: String,
+    generation: u64,
+    report: Option<UsageReport>,
+    source_report: Option<agent_usage_core::sources::SourceReport>,
+}
+
+fn spawn_fetch(app: AppHandle, provider: String) {
+    tauri::async_runtime::spawn(fetch_now(app, provider));
+}
+
+async fn fetch_now(app: AppHandle, provider: String) {
     let state = app.state::<AppState>();
-    if !state.in_flight.lock().unwrap().insert(provider) {
+    let Some(entry) = state.snapshot().provider(&provider).cloned() else {
+        return;
+    };
+    if !state
+        .in_flight
+        .lock()
+        .unwrap()
+        .begin(&provider, entry.generation)
+    {
         return;
     }
-
-    let options = state.snapshot().options();
-    // The library uses blocking HTTP, so keep it off the async runtime.
-    let report =
-        tauri::async_runtime::spawn_blocking(move || agent_usage_core::fetch(provider, &options))
-            .await
-            .unwrap_or_else(|_| UsageReport::failed(provider, "The query crashed unexpectedly."));
-
-    state.in_flight.lock().unwrap().remove(&provider);
-    let _ = app.emit(REPORT_EVENT, &report);
+    let generation = entry.generation;
+    let config = entry.config.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        use agent_usage_core::{
+            codex_account::AccountOptions,
+            sources::{self, CodexSource},
+            CodexOptions,
+        };
+        match config {
+            Configuration::Claude { options } => {
+                let report = agent_usage_core::claude::fetch(&options)
+                    .unwrap_or_else(|e| UsageReport::failed(Provider::Claude, e));
+                (Some(report), None)
+            }
+            Configuration::CodexInference { options } => (
+                None,
+                Some(sources::fetch(
+                    CodexSource::Inference,
+                    &options,
+                    &AccountOptions::default(),
+                )),
+            ),
+            Configuration::CodexAccount { options } => (
+                None,
+                Some(sources::fetch(
+                    CodexSource::Account,
+                    &CodexOptions::default(),
+                    &options,
+                )),
+            ),
+        }
+    })
+    .await;
+    let retry = state.in_flight.lock().unwrap().finish(&provider);
+    if retry {
+        spawn_fetch(app.clone(), provider.clone());
+    }
+    // Hold settings through emit so an edit/removal cannot publish an obsolete generation.
+    let settings = state.settings.lock().unwrap();
+    if !settings
+        .provider(&provider)
+        .is_some_and(|p| p.generation == generation)
+    {
+        return;
+    }
+    let (report, source_report) = result.unwrap_or_else(|_| {
+        (
+            Some(UsageReport::failed(
+                Provider::Codex,
+                "The query crashed unexpectedly.",
+            )),
+            None,
+        )
+    });
+    let _ = app.emit(
+        REPORT_EVENT,
+        EntryReport {
+            entry_id: provider,
+            generation,
+            report,
+            source_report,
+        },
+    );
 }
 
 /// Stop the provider's current timer, and start a new one if the provider
 /// is shown and set to refresh automatically.
-fn restart_timer(app: &AppHandle, provider: Provider) {
+fn restart_timer(app: &AppHandle, provider: String) {
     let state = app.state::<AppState>();
     let generation = {
         let mut generations = state.timer_generations.lock().unwrap();
-        let generation = generations.entry(provider).or_insert(0);
+        let generation = generations.entry(provider.clone()).or_insert(0);
         *generation += 1;
         *generation
     };
 
     let settings = state.snapshot();
-    let Some(config) = settings.provider(provider) else {
+    let Some(config) = settings.provider(&provider) else {
         return;
     };
     if !config.shown || !config.auto_refresh {
@@ -103,18 +172,15 @@ fn restart_timer(app: &AppHandle, provider: Provider) {
             if current != Some(generation) {
                 break;
             }
-            fetch_now(app.clone(), provider).await;
+            fetch_now(app.clone(), provider.clone()).await;
         }
     });
 }
 
 /// Fetch a provider now and restart its timer, unless it is already being
 /// fetched, in which case nothing happens.
-fn refresh_provider(app: &AppHandle, provider: Provider) {
-    if app.state::<AppState>().is_fetching(provider) {
-        return;
-    }
-    restart_timer(app, provider);
+fn refresh_provider(app: &AppHandle, provider: String) {
+    restart_timer(app, provider.clone());
     tauri::async_runtime::spawn(fetch_now(app.clone(), provider));
 }
 
@@ -159,7 +225,7 @@ fn start(app: AppHandle, state: State<AppState>) {
 }
 
 #[tauri::command]
-fn refresh(app: AppHandle, provider: Provider) {
+fn refresh(app: AppHandle, provider: String) {
     refresh_provider(&app, provider);
 }
 
@@ -174,17 +240,17 @@ fn refresh_all(app: AppHandle, state: State<AppState>) {
 fn set_auto_refresh(
     app: AppHandle,
     state: State<AppState>,
-    provider: Provider,
+    provider: String,
     auto_refresh: bool,
     interval_seconds: u64,
 ) -> Result<Settings, String> {
-    let result = state.update(|s| s.set_auto_refresh(provider, auto_refresh, interval_seconds));
+    let result = state.update(|s| s.set_auto_refresh(&provider, auto_refresh, interval_seconds));
     restart_timer(&app, provider);
     result
 }
 
 #[tauri::command]
-fn set_order(state: State<AppState>, order: Vec<Provider>) -> Result<Settings, String> {
+fn set_order(state: State<AppState>, order: Vec<String>) -> Result<Settings, String> {
     state.update(|s| {
         s.set_order(&order);
         Ok(())
@@ -195,10 +261,10 @@ fn set_order(state: State<AppState>, order: Vec<Provider>) -> Result<Settings, S
 fn set_shown(
     app: AppHandle,
     state: State<AppState>,
-    provider: Provider,
+    provider: String,
     shown: bool,
 ) -> Result<Settings, String> {
-    let result = state.update(|s| s.set_shown(provider, shown));
+    let result = state.update(|s| s.set_shown(&provider, shown));
     if shown {
         refresh_provider(&app, provider);
     } else {
@@ -221,16 +287,36 @@ fn set_pinned(app: AppHandle, state: State<AppState>, pinned: bool) -> Result<Se
 }
 
 #[tauri::command]
-fn save_preferences(
+fn save_preferences(state: State<AppState>, preferences: Preferences) -> Result<Settings, String> {
+    state.update(|s| s.apply_preferences(preferences))
+}
+
+#[tauri::command]
+fn save_entry(
     app: AppHandle,
     state: State<AppState>,
-    preferences: Preferences,
+    entry: EntryDraft,
 ) -> Result<Settings, String> {
-    let settings = state.update(|s| s.apply_preferences(preferences))?;
-    // New options can change what a fetch returns, so fetch again.
-    for provider in settings.shown() {
-        refresh_provider(&app, provider);
+    let before = entry
+        .id
+        .as_ref()
+        .and_then(|id| state.snapshot().provider(id).cloned());
+    let mut saved_id = String::new();
+    let settings = state.update(|s| {
+        saved_id = s.upsert(entry)?;
+        Ok(())
+    })?;
+    let saved = settings.provider(&saved_id).unwrap();
+    if before.as_ref().is_none_or(|old| old.config != saved.config) {
+        restart_timer(&app, saved_id.clone());
     }
+    Ok(settings)
+}
+
+#[tauri::command]
+fn remove_entry(app: AppHandle, state: State<AppState>, id: String) -> Result<Settings, String> {
+    let settings = state.update(|s| s.remove(&id))?;
+    restart_timer(&app, id);
     Ok(settings)
 }
 
@@ -246,14 +332,14 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             let settings_path = Settings::default_path();
-            let settings = Settings::load(&settings_path);
+            let settings = Settings::load(&settings_path).map_err(std::io::Error::other)?;
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(settings.pinned);
             }
             app.manage(AppState {
                 settings_path,
                 settings: Mutex::new(settings),
-                in_flight: Mutex::new(HashSet::new()),
+                in_flight: Mutex::new(requests::Requests::default()),
                 timer_generations: Mutex::new(HashMap::new()),
             });
             Ok(())
@@ -269,6 +355,8 @@ pub fn run() {
             set_shown,
             set_pinned,
             save_preferences,
+            save_entry,
+            remove_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");

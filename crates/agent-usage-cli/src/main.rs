@@ -12,9 +12,9 @@ use agent_usage_cli::{Metric, Options, Provider, UsageReport};
     name = "agent-usage-cli",
     version,
     about = "Show subscription usage for coding agents",
-    after_help = "Both providers are queried through undocumented endpoints using your \
-                  existing login tokens. The Codex query sends one minimal inference \
-                  request, which consumes a very small amount of quota."
+    after_help = "Codex defaults to an inference probe that consumes quota. Use --source account \
+                  for the official Codex App Server login and a read-only quota query. \
+                  Inference and Claude queries use undocumented HTTP endpoints."
 )]
 struct Cli {
     /// Print machine-readable JSON
@@ -37,6 +37,15 @@ enum Command {
 
 #[derive(Args)]
 struct CodexArgs {
+    /// Usage measurement strategy (account uses the official Codex login)
+    #[arg(long, default_value = "inference", value_parser = ["inference", "account", "both"])]
+    source: String,
+    /// Installed Codex executable for account queries
+    #[arg(long)]
+    codex_bin: Option<PathBuf>,
+    /// Codex home directory for account queries (separate from --auth-file)
+    #[arg(long)]
+    codex_home: Option<PathBuf>,
     /// Model to probe [default: gpt-6-luna]
     #[arg(long)]
     model: Option<String>,
@@ -67,6 +76,12 @@ struct ClaudeArgs {
 
 #[derive(Args)]
 struct AllArgs {
+    #[arg(long, default_value = "inference", value_parser = ["inference", "account", "both"])]
+    codex_source: String,
+    #[arg(long)]
+    codex_bin: Option<PathBuf>,
+    #[arg(long)]
+    codex_home: Option<PathBuf>,
     /// Providers to query, in order, comma-separated [default: every provider]
     #[arg(long, value_name = "PROVIDERS", value_delimiter = ',')]
     only: Option<Vec<Provider>>,
@@ -94,6 +109,15 @@ fn main() -> ExitCode {
 
     let (reports, single) = match cli.command {
         Command::Codex(args) => {
+            if let Err(error) = validate_source_options(
+                &args.source,
+                args.model.is_some() || args.effort.is_some() || args.auth_file.is_some(),
+                args.codex_bin.is_some() || args.codex_home.is_some(),
+            ) {
+                eprintln!("{error}");
+                return ExitCode::from(2);
+            }
+            let account = account_options(args.codex_bin, args.codex_home);
             if let Some(model) = args.model {
                 options.codex.model = model;
             }
@@ -101,6 +125,9 @@ fn main() -> ExitCode {
                 options.codex.effort = effort;
             }
             options.codex.auth_file = args.auth_file;
+            if args.source != "inference" {
+                return print_sources(&args.source, &options, &account, args.raw, cli.json, &[]);
+            }
             if args.raw {
                 return match agent_usage_cli::codex::fetch_raw(&options.codex) {
                     Ok(body) => {
@@ -138,6 +165,17 @@ fn main() -> ExitCode {
             )
         }
         Command::All(args) => {
+            if let Err(error) = validate_source_options(
+                &args.codex_source,
+                args.codex_model.is_some()
+                    || args.codex_effort.is_some()
+                    || args.codex_auth_file.is_some(),
+                args.codex_bin.is_some() || args.codex_home.is_some(),
+            ) {
+                eprintln!("{error}");
+                return ExitCode::from(2);
+            }
+            let account = account_options(args.codex_bin, args.codex_home);
             if let Some(model) = args.codex_model {
                 options.codex.model = model;
             }
@@ -147,6 +185,21 @@ fn main() -> ExitCode {
             options.codex.auth_file = args.codex_auth_file;
             options.claude.credentials_file = args.claude_credentials_file;
             let providers = args.only.unwrap_or_else(|| Provider::ALL.to_vec());
+            if args.codex_source != "inference" && providers.contains(&Provider::Codex) {
+                let others: Vec<_> = providers
+                    .iter()
+                    .copied()
+                    .filter(|p| *p != Provider::Codex)
+                    .collect();
+                return print_sources(
+                    &args.codex_source,
+                    &options,
+                    &account,
+                    false,
+                    cli.json,
+                    &others,
+                );
+            }
             (agent_usage_cli::fetch_all(&providers, &options), false)
         }
     };
@@ -170,6 +223,130 @@ fn main() -> ExitCode {
     }
 
     if reports.iter().all(UsageReport::is_ok) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn validate_source_options(
+    source: &str,
+    inference: bool,
+    account: bool,
+) -> Result<(), &'static str> {
+    if source == "account" && inference {
+        return Err("Model, effort, and auth-file options require inference or both.");
+    }
+    if source == "inference" && account {
+        return Err("Codex-bin and codex-home require account or both.");
+    }
+    Ok(())
+}
+
+fn account_options(
+    executable: Option<PathBuf>,
+    codex_home: Option<PathBuf>,
+) -> agent_usage_cli::codex_account::AccountOptions {
+    let mut result = agent_usage_cli::codex_account::AccountOptions::default();
+    if let Some(path) = executable {
+        result.executable = path;
+    }
+    result.codex_home = codex_home;
+    result
+}
+
+fn print_sources(
+    selection: &str,
+    options: &Options,
+    account: &agent_usage_cli::codex_account::AccountOptions,
+    raw: bool,
+    json_output: bool,
+    others: &[Provider],
+) -> ExitCode {
+    use agent_usage_cli::sources::{self, CodexSource};
+    let selected = if selection == "both" {
+        vec![CodexSource::Account, CodexSource::Inference]
+    } else {
+        vec![CodexSource::Account]
+    };
+    if raw {
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = selected
+                .iter()
+                .map(|&source| {
+                    scope.spawn(move || (source, sources::raw(source, &options.codex, account)))
+                })
+                .collect();
+            jobs.into_iter()
+                .map(|job| job.join().expect("raw query worker"))
+                .collect()
+        });
+        let ok = results.iter().all(|(_, r)| r.is_ok());
+        let output = if results.len() == 1 && ok {
+            results[0].1.as_ref().unwrap().clone()
+        } else {
+            serde_json::json!({"schema_version":2,"sources": results.into_iter().map(|(source,result)| match result {
+                Ok(result) => serde_json::json!({"source":source,"result":result}),
+                Err(error) => serde_json::json!({"source":source,"error":error}),
+            }).collect::<Vec<_>>()})
+        };
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        return if ok {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+    let reports: Vec<_> = std::thread::scope(|scope| {
+        let jobs: Vec<_> = selected
+            .iter()
+            .map(|&source| scope.spawn(move || sources::fetch(source, &options.codex, account)))
+            .collect();
+        jobs.into_iter()
+            .map(|job| job.join().expect("source query worker"))
+            .collect()
+    });
+    let other_reports = agent_usage_cli::fetch_all(others, options);
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(
+                &serde_json::json!({"schema_version":2,"sources":reports,"providers":other_reports})
+            )
+            .unwrap()
+        );
+    } else {
+        for report in &reports {
+            println!("Codex — {:?}", report.source);
+            if let Some(error) = &report.error {
+                println!("  Error: {error}");
+            }
+            for group in &report.groups {
+                println!(
+                    "  {}",
+                    group
+                        .limit_name
+                        .as_deref()
+                        .or(group.limit_id.as_deref())
+                        .unwrap_or(&group.key)
+                );
+                let mut legacy = UsageReport::new(Provider::Codex);
+                legacy.plan = group.plan.clone();
+                legacy.metrics = group.metrics.clone();
+                legacy.limit_reached = group.rate_limit_reached_type.is_some()
+                    || group.ordinary_usage_allowed == Some(false)
+                    || group.spend_control_reached == Some(true);
+                print_report(&legacy, chrono::Utc::now().timestamp());
+                if let Some(error) = &group.error {
+                    println!("  Error: {error}");
+                }
+            }
+        }
+        for report in &other_reports {
+            print_report(report, chrono::Utc::now().timestamp());
+        }
+    }
+    if reports.iter().all(|r| r.is_ok()) && other_reports.iter().all(UsageReport::is_ok) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
