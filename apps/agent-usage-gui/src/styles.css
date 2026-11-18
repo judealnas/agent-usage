@@ -199,6 +199,28 @@ select {
   font-weight: 600;
 }
 
+.provider-logo {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-right: 7px;
+  background: var(--text);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+
+.provider-logo-openai {
+  mask-image: url("./assets/openai.svg");
+  /* The official asset includes clear space around the blossom. */
+  mask-size: 145%;
+}
+
+.provider-logo-claude {
+  mask-image: url("./assets/claude.svg");
+  background-color: #D97757;
+}
+
 .card-title .plan {
   font-weight: 400;
   color: var(--muted);

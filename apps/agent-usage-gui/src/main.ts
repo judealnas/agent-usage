@@ -214,11 +214,15 @@ function buildCard(provider: ProviderSettings): HTMLElement {
   const header = el("div", "card-header");
   header.title = "Drag to reorder";
   const title = el("div", "card-title");
+  const brand = provider.config.kind === "claude" ? "claude" : "openai";
+  const logo = el("span", `provider-logo provider-logo-${brand}`);
+  logo.setAttribute("role", "img");
+  logo.setAttribute("aria-label", brand === "claude" ? "Claude" : "OpenAI");
   const hide = iconButton("close", `Hide ${providerName(id)}`, async () => {
     settings = await invoke<Settings>("set_shown", { provider: id, shown: false });
     render();
   });
-  header.append(title, hide);
+  header.append(logo, title, hide);
   enableDragging(card, header);
 
   const body = el("div", "card-body");
