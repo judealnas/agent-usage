@@ -1,4 +1,6 @@
-# agent-usage-window: implementation plan
+# agent-usage-gui: original implementation plan
+
+Historical plan: paths and repository names below describe the original `agent-usage-window` project before the monorepo migration and GUI rename.
 
 A small always-on-top desktop window showing subscription usage for coding
 agents (Codex and Claude Code now, OpenRouter later). This plan is written

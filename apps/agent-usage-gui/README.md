@@ -1,4 +1,4 @@
-# agent-usage-window
+# agent-usage-gui
 
 A small always-on-top window that shows how much of your coding-agent
 subscription limits you have used. Supports Codex (ChatGPT subscription)
@@ -34,7 +34,7 @@ Prerequisites:
 
 ```
 git clone <this repository>
-cd agent-usage/apps/agent-usage-window
+cd agent-usage/apps/agent-usage-gui
 npm ci
 npm run tauri dev      # run from source
 npm run tauri build    # build an installer under the workspace root target/release/bundle
@@ -104,7 +104,8 @@ Run `npm test` for color and provider-editor DOM tests. These use mocked Tauri
 commands; Rust tests cover credential matching, migration, and fake App Server
 processes without live credentials.
 
-Settings are saved to `%APPDATA%\agent-usage-window\settings.json`. The app
+The application identifier and settings directory retain their original names for
+compatibility with existing installations. Settings are saved to `%APPDATA%\agent-usage-window\settings.json`. The app
 rewrites that file whenever something changes, so it is not meant for hand
 editing.
 

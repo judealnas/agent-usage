@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "agent-usage-window"
+name = "agent-usage-gui"
 version = "0.1.1"
 dependencies = [
  "agent-usage-core",

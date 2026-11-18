@@ -1,12 +1,12 @@
 [package]
-name = "agent-usage-window"
+name = "agent-usage-gui"
 version.workspace = true
 edition = "2021"
 description = "An always-on-top window showing subscription usage for coding agents"
 license = "MIT"
 
 [lib]
-name = "agent_usage_window_lib"
+name = "agent_usage_gui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

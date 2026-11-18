@@ -9,7 +9,7 @@ installable; the GUI does not require the CLI executable.
 ## Projects
 
 - [CLI](crates/agent-usage-cli/README.md): `agent-usage-cli`.
-- [GUI](apps/agent-usage-window/README.md): Tauri desktop window.
+- [GUI](apps/agent-usage-gui/README.md): Tauri desktop window.
 - `crates/agent-usage-core`: shared provider queries, credential lookup, and reports.
 
 Codex supports two measurement strategies: the existing inference probe (which
@@ -26,7 +26,7 @@ From the repository root:
 cargo test
 cargo run -p agent-usage-cli -- --help
 cargo install --path crates/agent-usage-cli --locked
-cd apps/agent-usage-window
+cd apps/agent-usage-gui
 npm ci
 npm run tauri dev
 npm run tauri build -- --ci -- --locked

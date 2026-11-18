@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/agent-usage-core", "crates/agent-usage-cli", "apps/agent-usage-window/src-tauri"]
+members = ["crates/agent-usage-core", "crates/agent-usage-cli", "apps/agent-usage-gui/src-tauri"]
 default-members = ["crates/agent-usage-core", "crates/agent-usage-cli"]
 resolver = "2"
 
