@@ -80,6 +80,9 @@ interface Settings {
 }
 
 interface Meta {
+  author: string;
+  version: string;
+  repository: string;
   providers: { id: ProviderId; name: string }[];
   codex_efforts: string[];
 }
@@ -565,7 +568,22 @@ function renderSettings(): void {
   }
   const add = iconButton("plus", "Add provider", () => renderEntryEditor());
   providers.append(add);
-  form.append(general, providers, errorEl, actions);
+  const about = el("section", "settings-section about");
+  about.setAttribute("aria-label", "About");
+  const repository = el("a", undefined, "GitHub repository");
+  repository.href = meta.repository;
+  repository.addEventListener("click", async event => {
+    event.preventDefault();
+    try { await invoke("open_repository"); }
+    catch (error) { errorEl.textContent = String(error); errorEl.hidden = false; }
+  });
+  about.append(
+    el("h2", undefined, "About"),
+    el("div", undefined, `Author: ${meta.author}`),
+    el("div", undefined, `Version: ${meta.version}`),
+    repository,
+  );
+  form.append(general, providers, errorEl, actions, about);
   contentEl.replaceChildren(form);
 }
 

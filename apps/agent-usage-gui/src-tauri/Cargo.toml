@@ -3,6 +3,8 @@ name = "agent-usage-gui"
 version.workspace = true
 edition = "2021"
 description = "An always-on-top window showing subscription usage for coding agents"
+authors = ["Jude Alnas"]
+repository = "https://github.com/judealnas/agent-usage"
 license = "MIT"
 
 [lib]

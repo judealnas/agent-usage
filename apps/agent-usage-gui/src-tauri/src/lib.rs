@@ -192,6 +192,9 @@ struct ProviderInfo {
 
 #[derive(Serialize)]
 struct Meta {
+    author: &'static str,
+    version: &'static str,
+    repository: &'static str,
     providers: Vec<ProviderInfo>,
     codex_efforts: Vec<&'static str>,
 }
@@ -199,6 +202,9 @@ struct Meta {
 #[tauri::command]
 fn get_meta() -> Meta {
     Meta {
+        author: env!("CARGO_PKG_AUTHORS"),
+        version: env!("CARGO_PKG_VERSION"),
+        repository: env!("CARGO_PKG_REPOSITORY"),
         providers: Provider::ALL
             .into_iter()
             .map(|id| ProviderInfo {
@@ -213,6 +219,30 @@ fn get_meta() -> Meta {
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Settings {
     state.snapshot()
+}
+
+/// Open only this application's repository, never a frontend-supplied command or URL.
+#[tauri::command]
+fn open_repository() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let mut command = std::process::Command::new("explorer.exe");
+        command.creation_flags(0x08000000);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut command = std::process::Command::new("xdg-open");
+    let mut child = command
+        .arg(env!("CARGO_PKG_REPOSITORY"))
+        .spawn()
+        .map_err(|error| format!("Could not open the repository: {error}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 /// Called by the frontend once it is listening: fetch every shown provider
@@ -346,6 +376,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_meta,
+            open_repository,
             get_settings,
             start,
             refresh,

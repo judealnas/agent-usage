@@ -423,6 +423,7 @@ input.invalid {
   overflow-wrap: anywhere;
 }
 .provider-entry:hover { background: var(--hover); }
+.about a { color: var(--accent); text-underline-offset: 2px; }
 .quota-group + .quota-group { margin-top: 12px; }
 .quota-group h3 { font-size: 12px; margin: 0 0 6px; color: var(--muted); }
 [hidden] { display: none !important; }
