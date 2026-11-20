@@ -4,6 +4,7 @@ mod migration;
 mod requests;
 #[allow(dead_code)] // Legacy schema retained for migration and its regression tests.
 mod settings;
+mod tray;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +29,8 @@ struct AppState {
     /// Bumped whenever a provider's timer is restarted, so that the timer
     /// task from before the restart notices and stops.
     timer_generations: Mutex<HashMap<String, u64>>,
+    reports: Mutex<HashMap<String, EntryReport>>,
+    tray: Mutex<tray::TrayState>,
 }
 
 impl AppState {
@@ -129,19 +132,24 @@ async fn fetch_now(app: AppHandle, provider: String) {
             None,
         )
     });
-    let _ = app.emit(
-        REPORT_EVENT,
-        EntryReport {
-            entry_id: provider,
-            generation,
-            report,
-            source_report,
-        },
-    );
+    let payload = EntryReport {
+        entry_id: provider,
+        generation,
+        report,
+        source_report,
+    };
+    state
+        .reports
+        .lock()
+        .unwrap()
+        .insert(payload.entry_id.clone(), payload.clone());
+    let _ = app.emit(REPORT_EVENT, payload);
+    drop(settings);
+    tray::schedule(&app);
 }
 
 /// Stop the provider's current timer, and start a new one if the provider
-/// is shown and set to refresh automatically.
+/// is shown in the window or tray and set to refresh automatically.
 fn restart_timer(app: &AppHandle, provider: String) {
     let state = app.state::<AppState>();
     let generation = {
@@ -155,7 +163,7 @@ fn restart_timer(app: &AppHandle, provider: String) {
     let Some(config) = settings.provider(&provider) else {
         return;
     };
-    if !config.shown || !config.auto_refresh {
+    if !(config.shown || config.tray_enabled) || !config.auto_refresh {
         return;
     }
     let interval = Duration::from_secs(config.interval_seconds.max(1));
@@ -247,11 +255,11 @@ fn open_repository() -> Result<(), String> {
     Ok(())
 }
 
-/// Called by the frontend once it is listening: fetch every shown provider
+/// Called by the frontend once it is listening: fetch every monitored provider
 /// and start the timers.
 #[tauri::command]
 fn start(app: AppHandle, state: State<AppState>) {
-    for provider in state.snapshot().shown() {
+    for provider in state.snapshot().monitored() {
         refresh_provider(&app, provider);
     }
 }
@@ -263,7 +271,7 @@ fn refresh(app: AppHandle, provider: String) {
 
 #[tauri::command]
 fn refresh_all(app: AppHandle, state: State<AppState>) {
-    for provider in state.snapshot().shown() {
+    for provider in state.snapshot().monitored() {
         refresh_provider(&app, provider);
     }
 }
@@ -278,6 +286,7 @@ fn set_auto_refresh(
 ) -> Result<Settings, String> {
     let result = state.update(|s| s.set_auto_refresh(&provider, auto_refresh, interval_seconds));
     restart_timer(&app, provider);
+    tray::schedule(&app);
     result
 }
 
@@ -319,8 +328,20 @@ fn set_pinned(app: AppHandle, state: State<AppState>, pinned: bool) -> Result<Se
 }
 
 #[tauri::command]
-fn save_preferences(state: State<AppState>, preferences: Preferences) -> Result<Settings, String> {
-    state.update(|s| s.apply_preferences(preferences))
+fn save_preferences(
+    app: AppHandle,
+    state: State<AppState>,
+    preferences: Preferences,
+) -> Result<Settings, String> {
+    let settings = state.update(|s| s.apply_preferences(preferences))?;
+    tray::schedule(&app);
+    Ok(settings)
+}
+
+#[derive(serde::Deserialize)]
+struct TrayPreferences {
+    enabled: bool,
+    group: Option<String>,
 }
 
 #[tauri::command]
@@ -328,6 +349,7 @@ fn save_entry(
     app: AppHandle,
     state: State<AppState>,
     entry: EntryDraft,
+    tray: Option<TrayPreferences>,
 ) -> Result<Settings, String> {
     let before = entry
         .id
@@ -336,11 +358,25 @@ fn save_entry(
     let mut saved_id = String::new();
     let settings = state.update(|s| {
         saved_id = s.upsert(entry)?;
+        if let Some(tray) = tray {
+            let saved = s.providers.iter_mut().find(|p| p.id == saved_id).unwrap();
+            saved.tray_enabled = tray.enabled;
+            saved.tray_group = tray.group;
+        }
         Ok(())
     })?;
     let saved = settings.provider(&saved_id).unwrap();
-    if before.as_ref().is_none_or(|old| old.config != saved.config) {
+    if before
+        .as_ref()
+        .is_none_or(|old| old.config != saved.config || old.tray_enabled != saved.tray_enabled)
+    {
         restart_timer(&app, saved_id.clone());
+    }
+    tray::schedule(&app);
+    if before.as_ref().is_some_and(|old| {
+        !old.tray_enabled && saved.tray_enabled && !saved.shown && old.config == saved.config
+    }) {
+        spawn_fetch(app, saved_id);
     }
     Ok(settings)
 }
@@ -349,6 +385,12 @@ fn save_entry(
 fn remove_entry(app: AppHandle, state: State<AppState>, id: String) -> Result<Settings, String> {
     let settings = state.update(|s| s.remove(&id))?;
     restart_timer(&app, id);
+    state
+        .reports
+        .lock()
+        .unwrap()
+        .retain(|id, _| settings.provider(id).is_some());
+    tray::schedule(&app);
     Ok(settings)
 }
 
@@ -359,12 +401,33 @@ pub fn run() {
         .expect("Could not migrate existing Agent Usage settings; original files were preserved");
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+            tray::show_window(app);
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-open" => tray::show_window(app),
+            "tray-quit" => app.exit(0),
+            id if id.starts_with("tray-refresh:") => refresh_provider(app, id[13..].to_string()),
+            _ => {}
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<AppState>();
+                if state.snapshot().close_to_tray && state.tray.lock().unwrap().available() {
+                    api.prevent_close();
+                    if let Err(error) = window.hide() {
+                        eprintln!("Could not hide window: {error}");
+                    }
+                }
+            }
+        })
         .setup(|app| {
             let settings_path = Settings::default_path();
             let settings = Settings::load(&settings_path).map_err(std::io::Error::other)?;
@@ -376,6 +439,16 @@ pub fn run() {
                 settings: Mutex::new(settings),
                 in_flight: Mutex::new(requests::Requests::default()),
                 timer_generations: Mutex::new(HashMap::new()),
+                reports: Mutex::new(HashMap::new()),
+                tray: Mutex::new(tray::TrayState::default()),
+            });
+            tray::sync(app.handle());
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    tray::schedule(&handle);
+                }
             });
             Ok(())
         })

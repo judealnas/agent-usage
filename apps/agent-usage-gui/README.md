@@ -78,11 +78,33 @@ available as a separate release download.
 | Button | What it does |
 | --- | --- |
 | Pin | Toggles always-on-top |
-| Refresh | Refreshes every card now |
+| Refresh | Refreshes every visible or tray-selected entry now |
 | + | Adds back a provider you have hidden |
 | Sliders | Opens settings |
 | â€“ | Minimizes to the taskbar |
-| Ã— | Closes the app |
+| Ã— | Hides to the system tray by default |
+
+### System tray
+
+In **Settings > Providers**, open a provider’s configuration, enable **Show in
+system tray**, and click **Save**. Cancel discards changes to these settings. Each selected entry gets its own provider logo surrounded by two rings:
+the **outer ring shows 5-hour remaining capacity**, and the **inner ring shows 7-day
+remaining capacity**. Each ring changes from green to red using your configured red
+threshold. A fully exhausted ring is red; unavailable or expired readings are gray.
+Hover for the entry name, percentages, and local reset times.
+
+If a Codex source returns multiple quota groups, choose **Tray quota group** in
+that provider’s configuration. Windows from different groups are never combined. A missing selected
+group stays unavailable until it returns or you select another group.
+
+Selected entries continue using their refresh settings even when their cards or
+the main window are hidden. Manual refresh remains manual. Left-click any tray
+icon to restore the window; right-click for Open, Refresh this entry, or Quit.
+With no entries selected, an ordinary app icon provides Open and Quit.
+
+**Settings > General > Close to system tray** is enabled by default. Turn it off
+to exit when closing the window. **Quit** always exits. This does not enable
+starting automatically with Windows.
 
 **Each card** shows one provider: a bar for each rate-limit window, the
 percent used, and a countdown to the reset.
