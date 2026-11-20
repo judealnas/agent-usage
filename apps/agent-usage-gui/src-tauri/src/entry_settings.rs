@@ -144,6 +144,10 @@ pub struct Entry {
     pub shown: bool,
     pub auto_refresh: bool,
     pub interval_seconds: u64,
+    #[serde(default)]
+    pub tray_enabled: bool,
+    #[serde(default)]
+    pub tray_group: Option<String>,
 }
 impl Entry {
     pub fn label(&self) -> &str {
@@ -164,11 +168,18 @@ pub struct Settings {
     pub thresholds: Thresholds,
     pub warn_fast_polling: bool,
     pub pinned: bool,
+    #[serde(default = "default_true")]
+    pub close_to_tray: bool,
+}
+fn default_true() -> bool {
+    true
 }
 #[derive(Deserialize)]
 pub struct Preferences {
     pub thresholds: Thresholds,
     pub warn_fast_polling: bool,
+    #[serde(default = "default_true")]
+    pub close_to_tray: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -189,6 +200,8 @@ impl Settings {
                 shown: p.shown,
                 auto_refresh: p.auto_refresh,
                 interval_seconds: p.interval_seconds,
+                tray_enabled: false,
+                tray_group: None,
                 config: match p.id {
                     Provider::Codex => Configuration::CodexInference {
                         options: old.codex.clone(),
@@ -206,6 +219,7 @@ impl Settings {
             thresholds: old.thresholds,
             warn_fast_polling: old.warn_fast_polling,
             pinned: old.pinned,
+            close_to_tray: true,
         }
     }
     pub fn default_path() -> PathBuf {
@@ -244,10 +258,10 @@ impl Settings {
     pub fn provider(&self, id: &str) -> Option<&Entry> {
         self.providers.iter().find(|p| p.id == id)
     }
-    pub fn shown(&self) -> Vec<String> {
+    pub fn monitored(&self) -> Vec<String> {
         self.providers
             .iter()
-            .filter(|p| p.shown)
+            .filter(|p| p.shown || p.tray_enabled)
             .map(|p| p.id.clone())
             .collect()
     }
@@ -295,6 +309,8 @@ impl Settings {
                 shown: true,
                 auto_refresh: true,
                 interval_seconds: 300,
+                tray_enabled: false,
+                tray_group: None,
             });
             Ok(id)
         }
@@ -356,12 +372,35 @@ impl Settings {
         }
         self.thresholds = p.thresholds;
         self.warn_fast_polling = p.warn_fast_polling;
+        self.close_to_tray = p.close_to_tray;
         Ok(())
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tray_defaults_migrate_and_hidden_entries_keep_monitoring() {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("close_to_tray");
+        for p in value["providers"].as_array_mut().unwrap() {
+            p.as_object_mut().unwrap().remove("tray_enabled");
+            p.as_object_mut().unwrap().remove("tray_group");
+        }
+        let mut settings = Settings::from_json(&value.to_string()).unwrap();
+        assert!(settings.close_to_tray);
+        assert!(settings.providers.iter().all(|p| !p.tray_enabled));
+        settings.providers[0].shown = false;
+        let id = settings.providers[0].id.clone();
+        assert!(!settings.monitored().contains(&id));
+        settings.providers[0].tray_enabled = true;
+        settings.providers[0].tray_group = Some("work".into());
+        settings.close_to_tray = false;
+        assert!(settings.monitored().contains(&id));
+        let loaded = Settings::from_json(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert!(!loaded.close_to_tray);
+        assert_eq!(loaded.providers, settings.providers);
+    }
     #[test]
     fn migration_preserves_configuration() {
         let s=Settings::from_json(r#"{"codex":{"model":"custom","auth_file":"account.json"},"thresholds":{"critical":82}}"#).unwrap();

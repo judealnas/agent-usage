@@ -26,7 +26,7 @@ async function setup(cli = {supported:true,available:true,enabled:false,managed:
   const dom = new JSDOM(html, {runScripts:"outside-only",url:"http://localhost"});
   const win = dom.window;
   const calls=[];
-  let settings={providers:[{id:"entry-1",name:null,config:{kind:"codex_inference",options:{model:"test-model",effort:"low",auth_file:null}},generation:0,shown:true,auto_refresh:true,interval_seconds:300}],thresholds:{critical:90},warn_fast_polling:true,pinned:true};
+  let settings={providers:[{id:"entry-1",name:null,config:{kind:"codex_inference",options:{model:"test-model",effort:"low",auth_file:null}},generation:0,shown:true,auto_refresh:true,interval_seconds:300,tray_enabled:false,tray_group:null}],thresholds:{critical:90},warn_fast_polling:true,pinned:true,close_to_tray:true};
   win.ResizeObserver=class {observe(){}};
   win.host={listener:null,invoke:async(command,args)=>{
     calls.push({command,args});
@@ -39,10 +39,13 @@ async function setup(cli = {supported:true,available:true,enabled:false,managed:
       const existing=settings.providers.find(p=>p.id===draft.id);
       if(existing){if(JSON.stringify(existing.config)!==JSON.stringify(draft.config))existing.generation++;existing.config=draft.config;existing.name=draft.name;}
       else settings.providers.push({...draft,id:"entry-2",generation:0,shown:true,auto_refresh:true,interval_seconds:300});
+      const saved=settings.providers.find(p=>p.id===(draft.id ?? "entry-2"));
+      if(args.tray) Object.assign(saved,{tray_enabled:args.tray.enabled,tray_group:args.tray.group});
       return structuredClone(settings);
     }
     if(command==="remove_entry"){settings.providers=settings.providers.filter(p=>p.id!==args.id);return structuredClone(settings);}
     if(command==="save_preferences"){Object.assign(settings,args.preferences);return structuredClone(settings);}
+
   }};
   win.eval(bundle.outputFiles[0].text);
   await settle();
@@ -161,5 +164,40 @@ test("failed automatic save restores the saved value and shows an error", async(
     assert.equal(t.input("Red at (% used)").value,"90");
     assert.equal(t.input("Red at (% used)").disabled,false);
     assert.match(t.doc.querySelector(".general-settings > .form-error").textContent,/Disk unavailable/);
+  }finally{t.dom.window.close();}
+});
+
+test("tray settings live in provider configuration and respect Save, Cancel, and save failures", async()=>{
+  const t=await setup();try{
+    t.button("Settings").click();await settle();
+    const checkbox=text=>[...t.doc.querySelectorAll("label.switch")].find(l=>l.textContent===text)?.querySelector("input");
+    const close=checkbox("Close to system tray");
+    assert.equal(close.checked,true);close.click();await settle();
+    assert.equal(t.calls.filter(c=>c.command==="save_preferences").at(-1).args.preferences.close_to_tray,false);
+    assert.equal(checkbox("Show in system tray"),undefined);
+    t.doc.querySelector(".provider-entry").click();
+    checkbox("Show in system tray").click();
+    assert.equal(t.calls.filter(c=>c.command==="save_entry").length,0);
+    t.button("Cancel").click();t.doc.querySelector(".provider-entry").click();
+    assert.equal(checkbox("Show in system tray").checked,false);
+    checkbox("Show in system tray").click();await t.submit();
+    assert.equal(t.calls.filter(c=>c.command==="save_entry").at(-1).args.tray.enabled,true);
+    t.doc.querySelector(".provider-entry").click();
+    assert.equal(checkbox("Show in system tray").checked,true);
+    const original=t.win.host.invoke;
+    t.win.host.invoke=(command,args)=>command==="save_entry"?Promise.reject(new Error("Disk unavailable")):original(command,args);
+    checkbox("Show in system tray").click();await t.submit();
+    assert.match(t.doc.querySelector(".form-error").textContent,/Disk unavailable/);
+    t.button("Cancel").click();t.doc.querySelector(".provider-entry").click();
+    assert.equal(checkbox("Show in system tray").checked,true);
+  }finally{t.dom.window.close();}
+});
+
+test("new providers can select tray visibility before their first save", async()=>{
+  const t=await setup();try{
+    t.button("Settings").click();t.button("Add provider").click();
+    const toggle=[...t.doc.querySelectorAll("label.switch")].find(l=>l.textContent==="Show in system tray").querySelector("input");
+    toggle.click();await t.submit();
+    assert.equal(t.calls.find(c=>c.command==="save_entry").args.tray.enabled,true);
   }finally{t.dom.window.close();}
 });

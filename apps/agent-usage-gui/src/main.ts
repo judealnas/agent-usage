@@ -63,6 +63,8 @@ interface SourceReport {
 }
 interface EntryReport { entry_id: string; generation: number; report: Report | null; source_report: SourceReport | null }
 interface ProviderSettings {
+  tray_enabled: boolean;
+  tray_group: string | null;
   name: string | null;
   config: Configuration;
   generation: number;
@@ -73,6 +75,7 @@ interface ProviderSettings {
 }
 
 interface Settings {
+  close_to_tray: boolean;
   providers: ProviderSettings[];
   thresholds: { critical: number };
   warn_fast_polling: boolean;
@@ -546,6 +549,18 @@ function cliSettings(): HTMLElement {
 
 let preferencesSave: Promise<void> = Promise.resolve();
 
+function populateTrayGroups(select: HTMLSelectElement, entry: ProviderSettings): void {
+  const groups = cardStates.get(entry.id)?.good?.groups ?? [];
+  const choices: [string, string][] = [["", "Use the only available group"]];
+  for (const group of groups) choices.push([group.key, group.limit_name ?? group.limit_id ?? group.key]);
+  if (entry.tray_group && !groups.some(g => g.key === entry.tray_group)) choices.push([entry.tray_group, `${entry.tray_group} (unavailable)`]);
+  select.replaceChildren(...choices.map(([value, name]) => {
+    const option = el("option", undefined, name); option.value = value; return option;
+  }));
+  select.value = entry.tray_group ?? "";
+  select.parentElement!.hidden = groups.length <= 1 && !entry.tray_group;
+}
+
 function renderSettings(): void {
   const form = el("form", "settings settings-overview");
 
@@ -581,6 +596,11 @@ function renderSettings(): void {
   fast.type = "checkbox";
   fast.checked = settings.warn_fast_polling;
   fastLabel.append(fast, el("span", undefined, "Warn when a provider refreshes faster than once a minute"));
+  const trayLabel = el("label", "switch");
+  const closeToTray = el("input");
+  closeToTray.type = "checkbox";
+  closeToTray.checked = settings.close_to_tray;
+  trayLabel.append(closeToTray, el("span", undefined, "Close to system tray"));
 
   const errorEl = el("div", "form-error");
   errorEl.hidden = true;
@@ -591,27 +611,31 @@ function renderSettings(): void {
     const preferences = {
       thresholds: { critical: Number(critical.input.value) },
       warn_fast_polling: fast.checked,
+      close_to_tray: closeToTray.checked,
     };
-    critical.input.disabled = fast.disabled = true;
+    critical.input.disabled = fast.disabled = closeToTray.disabled = true;
     errorEl.hidden = true;
     preferencesSave = preferencesSave.then(async () => {
       try {
         const saved = await invoke<Settings>("save_preferences", { preferences });
         settings.thresholds = saved.thresholds;
         settings.warn_fast_polling = saved.warn_fast_polling;
+        settings.close_to_tray = saved.close_to_tray;
       } catch (error) {
         critical.input.value = String(settings.thresholds.critical);
         fast.checked = settings.warn_fast_polling;
+        closeToTray.checked = settings.close_to_tray;
         updatePreview();
         errorEl.textContent = `Could not save settings: ${String(error)}`;
         errorEl.hidden = false;
       } finally {
-        critical.input.disabled = fast.disabled = false;
+        critical.input.disabled = fast.disabled = closeToTray.disabled = false;
       }
     });
   };
   critical.input.addEventListener("change", savePreferences);
   fast.addEventListener("change", savePreferences);
+  closeToTray.addEventListener("change", savePreferences);
   form.addEventListener("submit", event => {
     event.preventDefault();
     savePreferences();
@@ -628,7 +652,10 @@ function renderSettings(): void {
   colors.append(el("h3", undefined, "Bar colors"), critical.field, colorHelp, preview, previewLabels);
   const polling = el("div", "settings-option");
   polling.append(el("h3", undefined, "Refresh warnings"), fastLabel);
-  general.append(colors, polling, cliSettings());
+  const trayOption = el("div", "settings-option");
+  trayOption.append(el("h3", undefined, "System tray"), trayLabel,
+    el("p", "setting-help", "Closing keeps monitoring running. Use Quit in the tray menu to exit. Choose tray entries inside each provider’s configuration."));
+  general.append(colors, polling, trayOption, cliSettings());
   const providers = el("div", "settings-section");
   for (const entry of settings.providers) {
     const button = el("button", "provider-entry", providerName(entry.id));
@@ -687,6 +714,18 @@ function renderEntryEditor(entry?: ProviderSettings): void {
   const executable = textField("Codex executable", config?.kind === "codex_account" ? config.options.executable : "codex");
   const home = textField("Codex home directory", config?.kind === "codex_account" ? config.options.codex_home ?? "" : "", "Default CODEX_HOME or ~/.codex");
   const credentials = textField("Credentials file", config?.kind === "claude" ? config.options.credentials_file ?? "" : "", "Default ~/.claude/.credentials.json");
+  const trayControls = el("div", "settings-option");
+  const trayLabel = el("label", "switch");
+  const trayEnabled = el("input"); trayEnabled.type = "checkbox"; trayEnabled.checked = entry?.tray_enabled ?? false;
+  trayLabel.append(trayEnabled, el("span", undefined, "Show in system tray"));
+  const trayGroup = selectField("Tray quota group", [], "");
+  if (entry) {
+    trayGroup.input.dataset.trayEntry = entry.id;
+    populateTrayGroups(trayGroup.input, entry);
+  } else { trayGroup.field.hidden = true; }
+  trayGroup.input.addEventListener("change", () => { trayGroup.input.dataset.trayDirty = "true"; });
+  trayControls.append(el("h3", undefined, "System tray"), trayLabel, trayGroup.field,
+    el("p", "setting-help", "Outer ring: 5 hours. Inner ring: 7 days. Keeps monitoring when hidden from the main window, using this entry’s refresh settings."));
   const fields = el("div", "settings");
   const updateFields = () => {
     strategy.field.hidden = type.input.value !== "codex";
@@ -722,17 +761,17 @@ function renderEntryEditor(entry?: ProviderSettings): void {
     else config = {kind:"codex_inference", options:{model:model.input.value.trim(),effort:effort.input.value,auth_file:clean(auth.input.value)}};
     try {
       const before = new Map(settings.providers.map(p => [p.id, p.generation]));
-      settings = await invoke<Settings>("save_entry", {entry:{id:entry?.id ?? null,name:clean(name.input.value),config}});
+      settings = await invoke<Settings>("save_entry", {entry:{id:entry?.id ?? null,name:clean(name.input.value),config},tray:{enabled:trayEnabled.checked,group:trayGroup.input.value || null}});
       for (const p of settings.providers) {
         if (!before.has(p.id) || before.get(p.id) !== p.generation) {
           cardStates.delete(p.id);
-          if (p.shown) void invoke("refresh", {provider:p.id});
+          if (p.shown || p.tray_enabled) void invoke("refresh", {provider:p.id});
         }
       }
       render();
     } catch (e) { error.textContent = String(e); save.disabled = false; }
   };
-  section.append(el("h2", undefined, entry ? "Edit provider" : "Add provider"), name.field, type.field, strategy.field, strategyHelp, fields);
+  section.append(el("h2", undefined, entry ? "Edit provider" : "Add provider"), name.field, type.field, strategy.field, strategyHelp, fields, trayControls);
   form.append(section, error, actions); contentEl.replaceChildren(form);
 }
 
@@ -806,6 +845,9 @@ async function init(): Promise<void> {
       if (!payload.report.error) state.good = payload.report;
     }
     cardStates.set(entry.id, state);
+    for (const select of contentEl.querySelectorAll<HTMLSelectElement>("select[data-tray-entry]")) {
+      if (select.dataset.trayEntry === entry.id && !select.disabled && !select.dataset.trayDirty) populateTrayGroups(select, entry);
+    }
     updateCard(entry.id);
   });
 
