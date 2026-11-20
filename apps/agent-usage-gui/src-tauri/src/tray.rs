@@ -338,7 +338,7 @@ fn render(entry: &Entry, data: &Indicator, threshold: f64) -> Result<Vec<u8>, St
     );
     // tiny-skia uses premultiplied alpha; Tauri expects straight RGBA.
     let mut pixels = pixmap.take();
-    for p in pixels.chunks_exact_mut(4) {
+    for p in pixels.as_chunks_mut::<4>().0 {
         if p[3] > 0 {
             for i in 0..3 {
                 p[i] = ((u32::from(p[i]) * 255) / u32::from(p[3])).min(255) as u8;
@@ -501,7 +501,7 @@ mod tests {
                     tooltip: String::new(),
                 };
                 let mut bytes = render(&entries[(row / 2) as usize], &data, 90.0).unwrap();
-                for p in bytes.chunks_exact_mut(4) {
+                for p in bytes.as_chunks_mut::<4>().0 {
                     for i in 0..3 {
                         p[i] = (u32::from(p[i]) * u32::from(p[3]) / 255) as u8;
                     }
@@ -523,7 +523,7 @@ mod tests {
                             0.0,
                             size as f32 / 32.0,
                             (column * 128 + x) as f32,
-                            (row * 64 + (64 - size as i32) / 2) as f32,
+                            (row * 64 + (64 - size) / 2) as f32,
                         ),
                         None,
                     );
