@@ -416,7 +416,9 @@ mod tests {
         // Count colored pixels outside the provider logo, in both rings.
         let colored = |pixels: &[u8]| {
             pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .enumerate()
                 .filter(|(i, p)| {
                     let x = (i % 32) as f64 + 0.5 - 16.0;
