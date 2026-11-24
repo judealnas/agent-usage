@@ -14,8 +14,9 @@ const bundle = await build({
       builder.onLoad({filter: /.*/, namespace:"mock"}, () => ({contents: `
         export const invoke=(command,args)=>window.host.invoke(command,args);
         export const listen=async(event,callback)=>{window.host.listener=callback;return ()=>{};};
-        export const getCurrentWindow=()=>({setSize:async()=>{},minimize:async()=>{},close:async()=>{}});
+        export const getCurrentWindow=()=>window.host.appWindow;
         export class LogicalSize { constructor(width,height){this.width=width;this.height=height;} }
+        export class PhysicalSize extends LogicalSize {}
       `}));
     },
   }],
@@ -26,9 +27,22 @@ async function setup(cli = {supported:true,available:true,enabled:false,managed:
   const dom = new JSDOM(html, {runScripts:"outside-only",url:"http://localhost"});
   const win = dom.window;
   const calls=[];
+  const resizeRequests=[];
+  let nativeSize={width:425,height:325};
+  const appWindow={
+    innerSize:async()=>nativeSize,
+    setSize:async(size)=>{
+      resizeRequests.push(size);
+      if (nativeSize.width===size.width && nativeSize.height===size.height) return;
+      nativeSize={width:size.width,height:size.height};
+      win.dispatchEvent(new win.Event("resize"));
+    },
+    minimize:async()=>{},
+    close:async()=>{},
+  };
   let settings={providers:[{id:"entry-1",name:null,config:{kind:"codex_inference",options:{model:"test-model",effort:"low",auth_file:null}},generation:0,shown:true,auto_refresh:true,interval_seconds:300,tray_enabled:false,tray_group:null}],thresholds:{critical:90},warn_fast_polling:true,pinned:true,close_to_tray:true};
   win.ResizeObserver=class {observe(){}};
-  win.host={listener:null,invoke:async(command,args)=>{
+  win.host={listener:null,appWindow,invoke:async(command,args)=>{
     calls.push({command,args});
     if(command==="get_meta")return {providers:[{id:"codex",name:"Codex"},{id:"claude",name:"Claude"}],codex_efforts:["low","high"]};
     if(command==="get_cli_status") return structuredClone(cli);
@@ -54,8 +68,27 @@ async function setup(cli = {supported:true,available:true,enabled:false,managed:
   const input=label=>[...doc.querySelectorAll("label")].find(l=>l.firstElementChild?.textContent===label)?.querySelector("input,select");
   const change=(field,value)=>{field.value=value;field.dispatchEvent(new win.Event("change",{bubbles:true}));};
   const submit=async()=>{doc.querySelector("form").dispatchEvent(new win.Event("submit",{bubbles:true,cancelable:true}));await settle();};
-  return {dom,win,doc,calls,button,input,change,submit};
+  return {dom,win,doc,calls,button,input,change,submit,resizeRequests};
 }
+
+test("fitting the height preserves the native width on a scaled display", async()=>{
+  const t=await setup();
+  try {
+    Object.defineProperties(t.win, {
+      devicePixelRatio:{value:1.25},
+      innerWidth:{value:339},
+      innerHeight:{value:260},
+    });
+    t.doc.getElementById("app").getBoundingClientRect=()=>({height:100.2});
+    t.win.dispatchEvent(new t.win.Event("resize"));
+    await settle();
+    assert.equal(t.resizeRequests.length,1);
+    assert.equal(t.resizeRequests[0].width,425);
+    assert.equal(t.resizeRequests[0].height,126);
+  } finally {
+    t.win.close();
+  }
+});
 
 test("provider editor shows only supported types and strategy-specific settings",async()=>{
   const t=await setup();try{

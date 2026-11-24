@@ -183,7 +183,15 @@ pub struct Preferences {
 }
 impl Default for Settings {
     fn default() -> Self {
-        Self::migrate(LegacySettings::default())
+        Self {
+            schema_version: 2,
+            next_id: 1,
+            providers: Vec::new(),
+            thresholds: Thresholds::default(),
+            warn_fast_polling: true,
+            pinned: true,
+            close_to_tray: true,
+        }
     }
 }
 impl Settings {
@@ -379,9 +387,38 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn configured_settings() -> Settings {
+        Settings::migrate(LegacySettings::default())
+    }
+
+    #[test]
+    fn missing_settings_starts_empty_and_can_save_the_first_provider() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        let mut settings = Settings::load(&path).unwrap();
+        assert!(settings.providers.is_empty());
+        assert!(settings.monitored().is_empty());
+
+        let id = settings
+            .upsert(EntryDraft {
+                id: None,
+                name: None,
+                config: Configuration::CodexInference {
+                    options: Default::default(),
+                },
+            })
+            .unwrap();
+        assert_eq!(id, "entry-1");
+        settings.save(&path).unwrap();
+        let reloaded = Settings::load(&path).unwrap();
+        assert_eq!(reloaded.providers, settings.providers);
+        assert_eq!(reloaded.monitored(), [id]);
+    }
+
     #[test]
     fn tray_defaults_migrate_and_hidden_entries_keep_monitoring() {
-        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        let mut value = serde_json::to_value(configured_settings()).unwrap();
         value.as_object_mut().unwrap().remove("close_to_tray");
         for p in value["providers"].as_array_mut().unwrap() {
             p.as_object_mut().unwrap().remove("tray_enabled");
@@ -417,7 +454,7 @@ mod tests {
     }
     #[test]
     fn duplicates_ignore_name_and_model_but_allow_other_strategy() {
-        let mut s = Settings::default();
+        let mut s = configured_settings();
         let mut config = s.providers[0].config.clone();
         if let Configuration::CodexInference { options } = &mut config {
             options.model = "different".into();
@@ -441,7 +478,7 @@ mod tests {
     }
     #[test]
     fn rename_keeps_generation_and_removal_survives_reload() {
-        let mut s = Settings::default();
+        let mut s = configured_settings();
         let e = s.providers[0].clone();
         s.upsert(EntryDraft {
             id: Some(e.id.clone()),
@@ -466,7 +503,7 @@ mod tests {
 
     #[test]
     fn explicit_default_credentials_are_duplicates() {
-        let mut settings = Settings::default();
+        let mut settings = configured_settings();
         let home = std::env::var_os("CLAUDE_CONFIG_DIR")
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
@@ -485,7 +522,7 @@ mod tests {
 
     #[test]
     fn config_change_advances_generation_and_preserves_card_interval() {
-        let mut settings = Settings::default();
+        let mut settings = configured_settings();
         let entry = settings.providers[0].clone();
         settings.set_auto_refresh(&entry.id, false, 17).unwrap();
         let mut config = entry.config;

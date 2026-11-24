@@ -347,12 +347,16 @@ fn render(entry: &Entry, data: &Indicator, threshold: f64) -> Result<Vec<u8>, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entry_settings::Settings;
     use agent_usage_core::{Provider, UsageReport};
+
+    fn configured_entries() -> Vec<Entry> {
+        Settings::from_json("{}").unwrap().providers
+    }
+
     #[test]
     fn rings_use_duration_not_order_and_expire_independently() {
-        let entry = crate::entry_settings::Settings::default()
-            .providers
-            .remove(0);
+        let entry = configured_entries().remove(0);
         let mut report = UsageReport::new(Provider::Codex);
         report.metrics = vec![
             Metric::window("weekly", Some(10080), 70.0, Some(200)),
@@ -373,9 +377,7 @@ mod tests {
     }
     #[test]
     fn obsolete_generation_is_never_displayed() {
-        let entry = crate::entry_settings::Settings::default()
-            .providers
-            .remove(0);
+        let entry = configured_entries().remove(0);
         let payload = EntryReport {
             entry_id: entry.id.clone(),
             generation: 99,
@@ -395,9 +397,7 @@ mod tests {
 
     #[test]
     fn rendered_rings_fill_as_usage_increases() {
-        let entry = crate::entry_settings::Settings::default()
-            .providers
-            .remove(0);
+        let entry = configured_entries().remove(0);
         let pixels = |used| {
             render(
                 &entry,
@@ -440,9 +440,7 @@ mod tests {
     #[test]
     fn group_selection_never_combines_accounts_and_errors_clear_rings() {
         use agent_usage_core::sources::SourceReport;
-        let mut entry = crate::entry_settings::Settings::default()
-            .providers
-            .remove(0);
+        let mut entry = configured_entries().remove(0);
         let mut report = UsageReport::new(Provider::Codex);
         report.metrics = vec![Metric::window("5h", Some(300), 20.0, None)];
         let mut source = SourceReport::inference(report, "test");
@@ -475,9 +473,7 @@ mod tests {
 
     #[test]
     fn tooltip_preserves_both_windows_with_long_unicode_names() {
-        let mut entry = crate::entry_settings::Settings::default()
-            .providers
-            .remove(0);
+        let mut entry = configured_entries().remove(0);
         entry.name = Some("😀".repeat(100));
         entry.auto_refresh = false;
         let mut report = UsageReport::new(Provider::Codex);
@@ -504,7 +500,7 @@ mod tests {
     fn export_tray_preview() {
         use resvg::tiny_skia::{Color, FilterQuality, IntSize, Pixmap, PixmapPaint, Transform};
         let mut sheet = Pixmap::new(512, 256).unwrap();
-        let entries = crate::entry_settings::Settings::default().providers;
+        let entries = configured_entries();
         for row in 0..4 {
             let background = if row % 2 == 0 {
                 Color::from_rgba8(240, 240, 240, 255)

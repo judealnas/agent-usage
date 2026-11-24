@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
 import {
   formatAgo,
@@ -799,10 +799,12 @@ function resetTick(): void {
 
 /** Make the window exactly as tall as its content. */
 async function fitHeight(): Promise<void> {
-  const height = Math.ceil(appEl.getBoundingClientRect().height);
-  if (height < 1 || Math.abs(window.innerHeight - height) < 1) return;
   try {
-    await appWindow.setSize(new LogicalSize(window.innerWidth, height));
+    const size = await appWindow.innerSize();
+    const height = Math.ceil(appEl.getBoundingClientRect().height * window.devicePixelRatio);
+    if (height < 1 || Math.abs(size.height - height) <= 1) return;
+    // The webview's CSS width can differ from the native width due to display scaling.
+    await appWindow.setSize(new PhysicalSize(size.width, height));
   } catch (error) {
     console.error(error);
   }
