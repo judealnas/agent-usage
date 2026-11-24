@@ -301,15 +301,11 @@ fn render(entry: &Entry, data: &Indicator, threshold: f64) -> Result<Vec<u8>, St
         "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'>",
     );
     for (radius, ring) in [14.5, 10.5].into_iter().zip(data.rings) {
-        let track = if ring.is_some_and(|r| r.remaining == 0.0) {
-            color(100.0, threshold)
-        } else {
-            "#7c828b".into()
-        };
+        let track = "#7c828b";
         svg.push_str(&format!("<circle cx='16' cy='16' r='{radius}' fill='none' stroke='{track}' stroke-width='2.5'/>"));
-        if let Some(ring) = ring.filter(|r| r.remaining > 0.0) {
+        if let Some(ring) = ring.filter(|r| r.used > 0.0) {
             let length = std::f64::consts::TAU * radius;
-            svg.push_str(&format!("<circle cx='16' cy='16' r='{radius}' fill='none' stroke='{}' stroke-width='2.5' stroke-dasharray='{} {}' transform='rotate(-90 16 16)'/>", color(ring.used, threshold), length * ring.remaining / 100.0, length));
+            svg.push_str(&format!("<circle cx='16' cy='16' r='{radius}' fill='none' stroke='{}' stroke-width='2.5' stroke-dasharray='{} {}' transform='rotate(-90 16 16)'/>", color(ring.used, threshold), length * ring.used.clamp(0.0, 100.0) / 100.0, length));
         }
     }
     // A white center disk keeps both existing provider marks readable on either taskbar theme.
@@ -395,6 +391,48 @@ mod tests {
         assert_eq!(color(0.0, 90.0), "#2dd22d");
         assert_eq!(color(90.0, 90.0), "#d22d2d");
         assert_eq!(color(120.0, 90.0), color(90.0, 90.0));
+    }
+
+    #[test]
+    fn rendered_rings_fill_as_usage_increases() {
+        let entry = crate::entry_settings::Settings::default()
+            .providers
+            .remove(0);
+        let pixels = |used| {
+            render(
+                &entry,
+                &Indicator {
+                    rings: [Some(Ring {
+                        remaining: 100.0 - used,
+                        used,
+                        reset: None,
+                    }); 2],
+                    tooltip: String::new(),
+                },
+                90.0,
+            )
+            .unwrap()
+        };
+        // Count colored pixels outside the provider logo, in both rings.
+        let colored = |pixels: &[u8]| {
+            pixels
+                .chunks_exact(4)
+                .enumerate()
+                .filter(|(i, p)| {
+                    let x = (i % 32) as f64 + 0.5 - 16.0;
+                    let y = (i / 32) as f64 + 0.5 - 16.0;
+                    x * x + y * y > 81.0 && p[3] > 0 && p[0].abs_diff(p[1]) > 30
+                })
+                .count()
+        };
+        let empty = pixels(0.0);
+        let quarter = pixels(25.0);
+        let full = pixels(100.0);
+        assert_eq!(colored(&empty), 0);
+        assert!(colored(&quarter) > 0);
+        assert!(colored(&full) > colored(&quarter) * 3);
+        assert_eq!(pixels(-10.0), empty);
+        assert_eq!(pixels(120.0), full);
     }
 
     #[test]
